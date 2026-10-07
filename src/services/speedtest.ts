@@ -101,7 +101,7 @@ export function speedtestCurrentNode(
   while (proxies[name]?.all) {
     if (seen.has(name)) return undefined
     seen.add(name)
-    const next = proxies[name].fixed || proxies[name].now
+    const next = proxies[name].now || proxies[name].fixed
     if (!next) return undefined
     name = next
   }

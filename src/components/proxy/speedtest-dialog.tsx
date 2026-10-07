@@ -609,6 +609,20 @@ function SpeedTestDialog({ open, groupName = '', onClose }: Props) {
             <TableBody>
               {rows.map((node) => {
                 const result = results[node]
+                const selectionPath = speedtestSelectionPath(
+                  proxyState,
+                  targetGroup,
+                  node,
+                )
+                const isCurrent =
+                  currentNode === node &&
+                  !!selectionPath?.every((selection) => {
+                    const proxy = proxyState[selection.group]
+                    return (
+                      (proxy.type === 'Selector' ? proxy.now : proxy.fixed) ===
+                      selection.node
+                    )
+                  })
                 return (
                   <TableRow key={node} hover selected={selected.has(node)}>
                     <TableCell padding="checkbox">
@@ -673,19 +687,19 @@ function SpeedTestDialog({ open, groupName = '', onClose }: Props) {
                     <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                       <Button
                         size="small"
-                        variant={currentNode === node ? 'text' : 'outlined'}
+                        variant={isCurrent ? 'text' : 'outlined'}
                         disabled={
                           running ||
                           !!switching ||
                           loading ||
                           profile === null ||
-                          currentNode === node ||
-                          !speedtestSelectionPath(proxyState, targetGroup, node)
+                          isCurrent ||
+                          !selectionPath
                         }
                         onClick={() => void applyNode(node)}
                       >
                         {t(
-                          currentNode === node
+                          isCurrent
                             ? 'proxies.speedtest.currentNode'
                             : switching === node
                               ? 'proxies.speedtest.switching'
