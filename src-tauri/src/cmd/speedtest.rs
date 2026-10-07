@@ -169,7 +169,7 @@ async fn measure(
     options: &SpeedtestOptions,
     channel: &Channel<SpeedtestResult>,
     api: &reqwest::Client,
-    client: &reqwest::Client,
+    proxy: &reqwest::Proxy,
     base: &str,
     secret: &str,
 ) -> Result<()> {
@@ -218,7 +218,16 @@ async fn measure(
                 }
             }
             if options.download {
-                match download(client, options).await {
+                // A previous node's keep-alive tunnel must never carry the next test.
+                let client = reqwest::Client::builder()
+                    .proxy(proxy.clone())
+                    .no_gzip()
+                    .no_brotli()
+                    .no_deflate()
+                    .no_zstd()
+                    .redirect(reqwest::redirect::Policy::limited(5))
+                    .build()?;
+                match download(&client, options).await {
                     Ok((bytes, speed)) => {
                         result.bytes = bytes;
                         result.bytes_per_second = Some(speed);
@@ -337,15 +346,7 @@ pub async fn run_speedtest(options: SpeedtestOptions, on_result: Channel<Speedte
                 tokio::time::sleep(Duration::from_millis(150)).await;
             }
             let proxy = reqwest::Proxy::all(format!("http://127.0.0.1:{port}"))?.basic_auth("speedtest", &secret);
-            let client = reqwest::Client::builder()
-                .proxy(proxy)
-                .no_gzip()
-                .no_brotli()
-                .no_deflate()
-                .no_zstd()
-                .redirect(reqwest::redirect::Policy::limited(5))
-                .build()?;
-            measure(&options, &on_result, &api, &client, &base, &secret).await
+            measure(&options, &on_result, &api, &proxy, &base, &secret).await
         };
         let result = tokio::select! { _ = token.cancelled() => Ok(()), result = work => result };
         let _ = child.kill().await;
@@ -374,6 +375,71 @@ mod tests {
         assert!(config["dns"].get("listen").is_none());
         assert_eq!(runtime["tun"]["enable"].as_bool(), Some(true));
         assert_eq!(runtime["secret"].as_str(), Some("original"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn each_node_uses_a_fresh_download_connection() -> Result<()> {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+
+        let selector = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let base = format!("http://{}", selector.local_addr()?);
+        let selector_task = tokio::spawn(async move {
+            loop {
+                let (mut stream, _) = selector.accept().await.unwrap();
+                let mut request = [0; 4096];
+                stream.read(&mut request).await.unwrap();
+                stream
+                    .write_all(b"HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n")
+                    .await
+                    .unwrap();
+            }
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let proxy = reqwest::Proxy::all(format!("http://{}", listener.local_addr()?))?;
+        let connections = Arc::new(AtomicUsize::new(0));
+        let count = connections.clone();
+        let server = tokio::spawn(async move {
+            loop {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                count.fetch_add(1, Ordering::SeqCst);
+                tokio::spawn(async move {
+                    let mut request = [0; 4096];
+                    while let Ok(size) = stream.read(&mut request).await {
+                        if size == 0 {
+                            break;
+                        }
+                        if stream
+                            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\ndata")
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                });
+            }
+        });
+        let options = SpeedtestOptions {
+            id: "connections".into(),
+            nodes: vec!["alpha".into(), "beta".into()],
+            latency: false,
+            download: true,
+            latency_url: String::new(),
+            download_url: "http://speedtest.invalid/payload".into(),
+            seconds: 2,
+            megabytes: 1,
+        };
+        let channel = Channel::new(|_| Ok(()));
+        let api = reqwest::Client::builder().no_proxy().build()?;
+        let result = measure(&options, &channel, &api, &proxy, &base, "test").await;
+        selector_task.abort();
+        server.abort();
+        result?;
+        assert_eq!(connections.load(Ordering::SeqCst), 2);
         Ok(())
     }
 
