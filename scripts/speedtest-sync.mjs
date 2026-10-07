@@ -61,12 +61,35 @@ git(
 const merge = spawnSync('git', ['merge', '--no-commit', '--no-ff', upstream], {
   encoding: 'utf8',
 })
-if (merge.status !== 0) {
-  const conflicts = git('diff', '--name-only', '--diff-filter=U')
+const workflowChanges = git(
+  'diff',
+  '--name-only',
+  base,
+  upstream,
+  '--',
+  '.github/workflows',
+)
+// GITHUB_TOKEN cannot push changed workflow files. Keep this fork's CI intact.
+git(
+  'restore',
+  '--source',
+  base,
+  '--staged',
+  '--worktree',
+  '--',
+  '.github/workflows',
+)
+if (workflowChanges)
+  summary(
+    `Retained this fork's workflows. Review upstream CI changes separately:\n\n\`\`\`\n${workflowChanges}\n\`\`\``,
+  )
+const conflicts = git('diff', '--name-only', '--diff-filter=U')
+const merging = spawnSync('git', ['rev-parse', '--verify', 'MERGE_HEAD'])
+if (conflicts || (merge.status !== 0 && merging.status !== 0)) {
   summary(
     `Upgrade to ${tag} needs attention. The speedtest branch was not changed.\n\nConflicting files:\n\n\`\`\`\n${conflicts}\n\`\`\``,
   )
-  git('merge', '--abort')
+  if (merging.status === 0) git('merge', '--abort')
   throw new Error(`Upstream merge failed: ${conflicts || merge.stderr}`)
 }
 writeFileSync(

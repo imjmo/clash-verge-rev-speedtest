@@ -53,6 +53,9 @@ disabled by GitHub. If necessary, re-enable the workflow or run it manually.
 It merges the release into a candidate branch, then calls the Windows build
 workflow explicitly: pushes made with `GITHUB_TOKEN` do not trigger another push
 workflow. A conflict fails with a list of conflicting files in the run summary.
+The candidate retains this fork's workflow files because `GITHUB_TOKEN` cannot
+push workflow changes. The summary lists upstream CI differences for separate
+review; application code and build dependencies still follow the stable release.
 A build failure leaves the candidate available for repair. Neither case changes
 the working `speedtest` branch or installs anything on your computer.
 
