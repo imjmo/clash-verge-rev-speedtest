@@ -1,0 +1,42 @@
+name: Speedtest upstream update
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 3 * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: speedtest-upstream-update
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository == 'imjmo/clash-verge-rev-speedtest'
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.sync.outputs.changed }}
+      ref: ${{ steps.sync.outputs.ref }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: speedtest
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Merge latest stable release into a candidate branch
+        id: sync
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/speedtest-sync.mjs
+  build:
+    needs: sync
+    if: needs.sync.outputs.changed == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/speedtest-build.yml
+    with:
+      ref: ${{ needs.sync.outputs.ref }}

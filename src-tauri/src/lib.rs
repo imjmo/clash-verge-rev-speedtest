@@ -155,6 +155,8 @@ mod app_init {
             cmd::patch_clash_mode,
             cmd::get_clash_mode,
             cmd::change_clash_core,
+            cmd::speedtest::run_speedtest,
+            cmd::speedtest::cancel_speedtest,
             cmd::get_runtime_config,
             cmd::get_proxy_view,
             cmd::get_runtime_yaml,

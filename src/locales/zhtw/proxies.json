@@ -118,5 +118,36 @@
         "PASS": "跳過此項 (PASS)"
       }
     }
+  },
+  "speedtest": {
+    "title": "節點測速",
+    "realDownload": "實際下載",
+    "description": "對所選節點獨立測速，不切換目前代理。兩項皆測時，先測延遲，再測下載速度。",
+    "group": "代理群組",
+    "allGroups": "全部節點",
+    "filter": "篩選節點名稱",
+    "latencyOnly": "僅測延遲",
+    "downloadOnly": "僅測下載",
+    "both": "延遲 + 下載",
+    "seconds": "時間上限（秒）",
+    "megabytes": "流量上限（MiB/節點）",
+    "downloadUrl": "下載測試位址",
+    "traffic": "預計下載流量不超過約 {{mb}} MiB；節點逐一測試。",
+    "selectVisible": "全選篩選結果",
+    "invert": "反選篩選結果",
+    "clearSelection": "清空選擇",
+    "selected": "已選 {{selected}} 個 · 顯示 {{visible}} 個",
+    "node": "節點",
+    "delay": "延遲",
+    "speed": "下載速度",
+    "failed": "失敗",
+    "empty": "沒有符合的節點",
+    "pickHint": "勾選節點後開始測試",
+    "close": "關閉",
+    "stop": "停止",
+    "stopping": "正在停止…",
+    "start": "開始測試",
+    "loadFailed": "無法載入節點，請檢查核心是否執行。",
+    "stopFailed": "停止測試失敗，請重試。"
   }
 }

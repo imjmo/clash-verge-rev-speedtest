@@ -118,5 +118,36 @@
         "PASS": "Lewati aturan ini saat cocok"
       }
     }
+  },
+  "speedtest": {
+    "title": "Node speed test",
+    "realDownload": "Real download",
+    "description": "Test selected nodes without changing your active proxy. Latency is measured before downloading.",
+    "group": "Proxy group",
+    "allGroups": "All nodes",
+    "filter": "Filter node names",
+    "latencyOnly": "Latency only",
+    "downloadOnly": "Download only",
+    "both": "Latency + download",
+    "seconds": "Time limit (seconds)",
+    "megabytes": "Data limit (MiB/node)",
+    "downloadUrl": "Download URL",
+    "traffic": "Up to approximately {{mb}} MiB of download data. Each node is tested separately.",
+    "selectVisible": "Select filtered",
+    "invert": "Invert filtered",
+    "clearSelection": "Clear selection",
+    "selected": "{{selected}} selected · {{visible}} visible",
+    "node": "Node",
+    "delay": "Latency",
+    "speed": "Download speed",
+    "failed": "Failed",
+    "empty": "No matching nodes",
+    "pickHint": "Select nodes to start",
+    "close": "Close",
+    "stop": "Stop",
+    "stopping": "Stopping…",
+    "start": "Start test",
+    "loadFailed": "Could not load nodes. Check that the core is running.",
+    "stopFailed": "Could not stop the test. Please try again."
   }
 }

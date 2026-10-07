@@ -3,6 +3,7 @@
   "version": "2.5.7",
   "license": "GPL-3.0-only",
   "scripts": {
+    "build:speedtest": "cross-env CVR_SPEEDTEST_BUILD=1 VITE_SPEEDTEST_BUILD=true pnpm build --config src-tauri/tauri.speedtest.conf.json",
     "prepare": "husky || true",
     "dev": "node scripts/dev.mjs dev",
     "dev:service": "node scripts/dev.mjs service",

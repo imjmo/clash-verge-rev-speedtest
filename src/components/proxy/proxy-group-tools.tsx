@@ -22,6 +22,7 @@ import { isValidUrl } from '@/utils/network'
 
 import { BaseSearchBox, type SearchState } from '../base'
 
+import { SpeedTestButton } from './speedtest-dialog'
 import type { ProxySortType } from './use-filter-sort'
 import type { HeadState } from './use-head-state'
 
@@ -146,6 +147,7 @@ export const ProxyGroupTools = memo(function ProxyGroupTools(props: Props) {
       }}
     >
       {side === 'right' && textInput}
+      <SpeedTestButton groupName={groupName} />
       <IconButton
         size="small"
         color="inherit"

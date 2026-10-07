@@ -25,6 +25,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { BaseEmpty, BasePage } from '@/components/base'
+import { SpeedTestButton } from '@/components/proxy/speedtest-dialog'
 import { showNotice } from '@/services/notice-service'
 
 interface UnlockItem {
@@ -240,6 +241,7 @@ const UnlockPage = () => {
       title={t('tests.unlock.page.title')}
       header={
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <SpeedTestButton full />
           <Button
             variant="contained"
             size="small"

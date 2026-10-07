@@ -1,0 +1,74 @@
+name: Speedtest Windows build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [speedtest, 'speedtest-update/**']
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: speedtest-build-${{ inputs.ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    if: github.repository == 'imjmo/clash-verge-rev-speedtest'
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      HUSKY: '0'
+      CVR_SPEEDTEST_BUILD: '1'
+      VITE_SPEEDTEST_BUILD: 'true'
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .tool-versions
+      - uses: pnpm/action-setup@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: '. -> target'
+          key: speedtest-windows
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Check speedtest behavior
+        run: pnpm exec vitest run src/services/speedtest.test.ts
+      - name: Check changed frontend code
+        run: pnpm exec eslint src/components/proxy/speedtest-dialog.tsx src/services/speedtest.ts --max-warnings=0
+      - name: Prepare core and service
+        run: pnpm prebuild x86_64-pc-windows-msvc
+      - name: Verify routing with real core and local test nodes
+        run: node scripts/speedtest-core-check.mjs src-tauri/sidecar/verge-mihomo-x86_64-pc-windows-msvc.exe
+      - name: Verify configuration isolation and stalled download deadline
+        run: cargo test -p clash-verge --features clippy --locked --lib cmd::speedtest::tests
+      - name: Build Windows installer
+        run: pnpm build:speedtest --target x86_64-pc-windows-msvc
+      - name: Record source version
+        shell: pwsh
+        run: |
+          $installers = Get-ChildItem 'target/x86_64-pc-windows-msvc/release/bundle/nsis/*-setup.exe' -ErrorAction Stop
+          if (-not $installers) { throw 'The Windows installer is missing.' }
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          $commit = git rev-parse HEAD
+          "Version: $version`nCommit: $commit`nBuilt from $env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/commit/$commit" | Set-Content target/build-info.txt
+          "### Windows installer`nDownload the artifact below and extract the installer. This custom build uses manual updates to preserve speedtest.`n`nSource: $commit" >> $env:GITHUB_STEP_SUMMARY
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Clash-Verge-Speedtest-Windows-x64-${{ github.run_number }}
+          path: |
+            target/x86_64-pc-windows-msvc/release/bundle/nsis/*-setup.exe
+            target/build-info.txt
+          if-no-files-found: error
+          retention-days: 90

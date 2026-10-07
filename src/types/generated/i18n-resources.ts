@@ -604,6 +604,37 @@ export interface TranslationResources {
           sortName: string
         }
       }
+      speedtest: {
+        allGroups: string
+        both: string
+        clearSelection: string
+        close: string
+        delay: string
+        description: string
+        downloadOnly: string
+        downloadUrl: string
+        empty: string
+        failed: string
+        filter: string
+        group: string
+        invert: string
+        latencyOnly: string
+        loadFailed: string
+        megabytes: string
+        node: string
+        pickHint: string
+        realDownload: string
+        seconds: string
+        selected: string
+        selectVisible: string
+        speed: string
+        start: string
+        stop: string
+        stopFailed: string
+        stopping: string
+        title: string
+        traffic: string
+      }
     }
     rules: {
       feedback: {

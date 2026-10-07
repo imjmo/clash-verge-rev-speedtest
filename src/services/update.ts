@@ -72,6 +72,7 @@ const localVersionNormalized = normalizeVersion(appVersion)
 export const checkUpdateSafe = async (
   options?: CheckOptions,
 ): Promise<Update | null> => {
+  if (import.meta.env.VITE_SPEEDTEST_BUILD === 'true') return null
   const result = await check(options ?? {})
   if (!result) return null
 

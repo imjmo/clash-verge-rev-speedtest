@@ -22,6 +22,7 @@ import { showNotice } from '@/services/notice-service'
 import { debugLog } from '@/utils/debug'
 import { isValidUrl } from '@/utils/network'
 
+import { SpeedTestButton } from './speedtest-dialog'
 import type { ProxySortType } from './use-filter-sort'
 import type { HeadState } from './use-head-state'
 
@@ -77,6 +78,7 @@ export const ProxyHead = ({
 
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ...sx }}>
+      <SpeedTestButton groupName={groupName} />
       <IconButton
         size="small"
         color="inherit"

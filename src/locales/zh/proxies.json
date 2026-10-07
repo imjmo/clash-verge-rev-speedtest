@@ -118,5 +118,36 @@
         "PASS": "跳过此项 (PASS)"
       }
     }
+  },
+  "speedtest": {
+    "title": "节点测速",
+    "realDownload": "真实下载",
+    "description": "对所选节点独立测速，不切换当前代理。两项都测时，先测延迟，再测下载速度。",
+    "group": "代理组",
+    "allGroups": "全部节点",
+    "filter": "筛选节点名称",
+    "latencyOnly": "仅测延迟",
+    "downloadOnly": "仅测下载",
+    "both": "延迟 + 下载",
+    "seconds": "时间上限（秒）",
+    "megabytes": "流量上限（MiB/节点）",
+    "downloadUrl": "下载测试地址",
+    "traffic": "预计下载流量不超过约 {{mb}} MiB；节点逐个测试。",
+    "selectVisible": "全选筛选结果",
+    "invert": "反选筛选结果",
+    "clearSelection": "清空选择",
+    "selected": "已选 {{selected}} 个 · 显示 {{visible}} 个",
+    "node": "节点",
+    "delay": "延迟",
+    "speed": "下载速度",
+    "failed": "失败",
+    "empty": "没有匹配的节点",
+    "pickHint": "勾选节点后开始测试",
+    "close": "关闭",
+    "stop": "停止",
+    "stopping": "正在停止…",
+    "start": "开始测试",
+    "loadFailed": "无法加载节点，请检查内核是否运行。",
+    "stopFailed": "停止测试失败，请重试。"
   }
 }
