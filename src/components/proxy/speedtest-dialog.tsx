@@ -32,15 +32,37 @@ import {
 } from '@mui/material'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { getProxies } from 'tauri-plugin-mihomo-api'
+import {
+  closeConnection,
+  getConnections,
+  getProxies,
+  selectNodeForGroup,
+} from 'tauri-plugin-mihomo-api'
 
+import {
+  useActiveSpeedtest,
+  useSpeedtestProfile,
+  useSpeedtestResults,
+} from '@/hooks/use-speedtest-results'
+import { useVerge } from '@/hooks/use-verge'
+import {
+  getProfiles,
+  recordSelectedNode,
+  syncTrayProxySelection,
+} from '@/services/cmds'
 import delayManager from '@/services/delay'
+import { revalidateQuery } from '@/services/query-client'
 import {
   cancelSpeedtest,
   runSpeedtest,
   sortSpeedtestRows,
+  isSpeedtestSelectable,
+  speedtestSelectionPath,
+  speedtestCurrentNode,
+  DEFAULT_SPEEDTEST_DOWNLOAD,
 } from '@/services/speedtest'
-import type { SpeedtestResult, SpeedtestSort } from '@/services/speedtest'
+import type { SpeedtestProxy, SpeedtestSort } from '@/services/speedtest'
+import { saveSpeedtestResult } from '@/services/speedtest-results'
 
 const EXCLUDED = new Set([
   'Direct',
@@ -50,7 +72,7 @@ const EXCLUDED = new Set([
   'Dns',
   'Compatible',
 ])
-const DEFAULT_DOWNLOAD = 'https://speed.cloudflare.com/__down?bytes={bytes}'
+const DEFAULT_DOWNLOAD = DEFAULT_SPEEDTEST_DOWNLOAD
 
 interface Props {
   open: boolean
@@ -60,6 +82,16 @@ interface Props {
 
 function SpeedTestDialog({ open, groupName = '', onClose }: Props) {
   const { t } = useTranslation()
+  const profile = useSpeedtestProfile()
+  const activeRun = useActiveSpeedtest()
+  const results = useSpeedtestResults(profile)
+  const { verge } = useVerge()
+  const [proxyState, setProxyState] = useState<Record<string, SpeedtestProxy>>(
+    {},
+  )
+  const [targetGroup, setTargetGroup] = useState('')
+  const [switching, setSwitching] = useState('')
+  const [selectionNotice, setSelectionNotice] = useState('')
   const [groups, setGroups] = useState<Record<string, string[]>>({})
   const [group, setGroup] = useState(groupName)
   const [nodes, setNodes] = useState<string[]>([])
@@ -69,7 +101,6 @@ function SpeedTestDialog({ open, groupName = '', onClose }: Props) {
   const [seconds, setSeconds] = useState(5)
   const [megabytes, setMegabytes] = useState(20)
   const [downloadUrl, setDownloadUrl] = useState(DEFAULT_DOWNLOAD)
-  const [results, setResults] = useState<Record<string, SpeedtestResult>>({})
   const [sort, setSort] = useState<SpeedtestSort>('node')
   const [direction, setDirection] = useState<'asc' | 'desc'>('asc')
   const [loading, setLoading] = useState(false)
@@ -121,6 +152,21 @@ function SpeedTestDialog({ open, groupName = '', onClose }: Props) {
         )
         setNodes(allNodes)
         setGroups(nextGroups)
+        setProxyState(proxies)
+        const selectable = Object.keys(proxies).filter((name) =>
+          isSpeedtestSelectable(proxies[name]),
+        )
+        setTargetGroup(
+          isSpeedtestSelectable(proxies[groupName])
+            ? groupName
+            : (selectable.find(
+                (name) =>
+                  name !== 'GLOBAL' && proxies[name].type === 'Selector',
+              ) ??
+                selectable[0] ??
+                ''),
+        )
+        setSelectionNotice('')
         setGroup(groupName in nextGroups ? groupName : '')
         setSelected(
           (previous) =>
@@ -136,7 +182,53 @@ function SpeedTestDialog({ open, groupName = '', onClose }: Props) {
     return () => {
       disposed = true
     }
-  }, [open, groupName, t])
+  }, [open, groupName, profile, t])
+
+  const selectableGroups = Object.keys(proxyState).filter((name) =>
+    isSpeedtestSelectable(proxyState[name]),
+  )
+  const currentNode = speedtestCurrentNode(proxyState, targetGroup)
+  const applyNode = async (node: string) => {
+    if (switching || running || profile === null) return
+    setSwitching(node)
+    setError('')
+    setSelectionNotice('')
+    try {
+      const [fresh, activeProfile] = await Promise.all([
+        getProxies(),
+        getProfiles(),
+      ])
+      if ((activeProfile.current ?? '__default__') !== profile)
+        throw new Error(t('proxies.speedtest.profileChanged'))
+      const path = speedtestSelectionPath(fresh.proxies, targetGroup, node)
+      if (!path) throw new Error(t('proxies.speedtest.nodeUnavailable'))
+      const previous = speedtestCurrentNode(fresh.proxies, targetGroup)
+      for (const selection of path) {
+        await selectNodeForGroup(selection.group, selection.node)
+        await recordSelectedNode(selection.group, selection.node)
+      }
+      if (verge?.auto_close_connection && previous && previous !== node) {
+        const { connections } = await getConnections()
+        await Promise.allSettled(
+          (connections ?? [])
+            .filter((connection) => connection.chains.includes(previous))
+            .map((connection) => closeConnection(connection.id)),
+        )
+      }
+      setSelectionNotice(
+        t('proxies.speedtest.switched', { group: targetGroup, node }),
+      )
+    } catch (failure) {
+      setError(String(failure))
+    } finally {
+      await Promise.allSettled([
+        getProxies().then(({ proxies }) => setProxyState(proxies)),
+        syncTrayProxySelection(),
+        revalidateQuery(['getProxyView']),
+      ])
+      setSwitching('')
+    }
+  }
 
   const visible = useMemo(() => {
     const keyword = filter.trim().toLocaleLowerCase()
@@ -189,28 +281,21 @@ function SpeedTestDialog({ open, groupName = '', onClose }: Props) {
     setSort(field)
   }
   const start = async () => {
-    if (activeRef.current || !targets.length || !valid) return
+    if (
+      activeRef.current ||
+      activeRun ||
+      switching ||
+      profile === null ||
+      !targets.length ||
+      !valid
+    )
+      return
     const id = crypto.randomUUID()
     activeRef.current = id
     setRunning(true)
     setStopping(false)
     setError('')
     setProgress({ done: 0, total: targets.length })
-    setResults((previous) => {
-      const next = { ...previous }
-      targets.forEach((name) => {
-        const old = previous[name]
-        next[name] = {
-          node: name,
-          delay: mode === 'download' ? (old?.delay ?? null) : null,
-          delayError: mode === 'download' ? (old?.delayError ?? null) : null,
-          bytesPerSecond: download ? null : (old?.bytesPerSecond ?? null),
-          bytes: download ? 0 : (old?.bytes ?? 0),
-          downloadError: download ? null : (old?.downloadError ?? null),
-        }
-      })
-      return next
-    })
     try {
       await runSpeedtest(
         {
@@ -227,28 +312,17 @@ function SpeedTestDialog({ open, groupName = '', onClose }: Props) {
         },
         (result) => {
           if (!mountedRef.current || activeRef.current !== id) return
-          setResults((previous) => ({
-            ...previous,
-            [result.node]: {
-              ...result,
-              ...(mode === 'download'
-                ? {
-                    delay: previous[result.node]?.delay ?? null,
-                    delayError: previous[result.node]?.delayError ?? null,
-                  }
-                : {}),
-              ...(!download
-                ? {
-                    bytesPerSecond:
-                      previous[result.node]?.bytesPerSecond ?? null,
-                    bytes: previous[result.node]?.bytes ?? 0,
-                    downloadError: previous[result.node]?.downloadError ?? null,
-                  }
-                : {}),
-            },
-          }))
+          if (
+            !saveSpeedtestResult(profile, result, {
+              latency: mode !== 'download',
+              download,
+            })
+          ) {
+            setError(t('proxies.speedtest.saveFailed'))
+          }
           setProgress((previous) => ({ ...previous, done: previous.done + 1 }))
         },
+        { profile },
       )
     } catch (failure) {
       if (mountedRef.current) {
@@ -280,7 +354,7 @@ function SpeedTestDialog({ open, groupName = '', onClose }: Props) {
   return (
     <Dialog
       open={open}
-      onClose={running ? undefined : onClose}
+      onClose={running || switching ? undefined : onClose}
       // Portal clicks still bubble through the owning proxy group's header.
       onClick={(event) => event.stopPropagation()}
       fullWidth
@@ -333,6 +407,31 @@ function SpeedTestDialog({ open, groupName = '', onClose }: Props) {
             value={filter}
             onChange={(event) => setFilter(event.target.value)}
           />
+        </Stack>
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={1.5}
+          sx={{ alignItems: { sm: 'center' } }}
+        >
+          <TextField
+            select
+            size="small"
+            label={t('proxies.speedtest.targetGroup')}
+            value={targetGroup}
+            disabled={
+              running || loading || !!switching || !selectableGroups.length
+            }
+            sx={{ minWidth: 200 }}
+          >
+            {selectableGroups.map((name) => (
+              <MenuItem key={name} value={name}>
+                {name}
+              </MenuItem>
+            ))}
+          </TextField>
+          <Typography variant="caption" color="text.secondary">
+            {t('proxies.speedtest.savedHint')}
+          </Typography>
         </Stack>
         <ToggleButtonGroup
           exclusive
@@ -399,6 +498,7 @@ function SpeedTestDialog({ open, groupName = '', onClose }: Props) {
             {error}
           </Alert>
         )}
+        {selectionNotice && <Alert severity="success">{selectionNotice}</Alert>}
         <Stack
           direction="row"
           sx={{ alignItems: 'center', flexWrap: 'wrap' }}
@@ -501,6 +601,9 @@ function SpeedTestDialog({ open, groupName = '', onClose }: Props) {
                     </TableSortLabel>
                   </TableCell>
                 ))}
+                <TableCell align="right">
+                  {t('proxies.speedtest.useNode')}
+                </TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -526,7 +629,14 @@ function SpeedTestDialog({ open, groupName = '', onClose }: Props) {
                         fontVariantNumeric: 'tabular-nums',
                       }}
                     >
-                      <Tooltip title={result?.delayError ?? ''}>
+                      <Tooltip
+                        title={
+                          result?.delayError ||
+                          (result?.delayTestedAt
+                            ? new Date(result.delayTestedAt).toLocaleString()
+                            : '')
+                        }
+                      >
                         <span>
                           {result?.delay != null
                             ? `${result.delay} ms`
@@ -543,7 +653,14 @@ function SpeedTestDialog({ open, groupName = '', onClose }: Props) {
                         fontVariantNumeric: 'tabular-nums',
                       }}
                     >
-                      <Tooltip title={result?.downloadError ?? ''}>
+                      <Tooltip
+                        title={
+                          result?.downloadError ||
+                          (result?.downloadTestedAt
+                            ? new Date(result.downloadTestedAt).toLocaleString()
+                            : '')
+                        }
+                      >
                         <span>
                           {result?.bytesPerSecond != null
                             ? `${(result.bytesPerSecond / 1024 / 1024).toFixed(2)} MiB/s`
@@ -553,12 +670,35 @@ function SpeedTestDialog({ open, groupName = '', onClose }: Props) {
                         </span>
                       </Tooltip>
                     </TableCell>
+                    <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                      <Button
+                        size="small"
+                        variant={currentNode === node ? 'text' : 'outlined'}
+                        disabled={
+                          running ||
+                          !!switching ||
+                          loading ||
+                          profile === null ||
+                          currentNode === node ||
+                          !speedtestSelectionPath(proxyState, targetGroup, node)
+                        }
+                        onClick={() => void applyNode(node)}
+                      >
+                        {t(
+                          currentNode === node
+                            ? 'proxies.speedtest.currentNode'
+                            : switching === node
+                              ? 'proxies.speedtest.switching'
+                              : 'proxies.speedtest.useNode',
+                        )}
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 )
               })}
               {!rows.length && (
                 <TableRow>
-                  <TableCell colSpan={4} align="center" sx={{ py: 5 }}>
+                  <TableCell colSpan={5} align="center" sx={{ py: 5 }}>
                     {t('proxies.speedtest.empty')}
                   </TableCell>
                 </TableRow>
@@ -574,7 +714,7 @@ function SpeedTestDialog({ open, groupName = '', onClose }: Props) {
             : t('proxies.speedtest.pickHint')}
         </Typography>
         <Stack direction="row" spacing={1}>
-          <Button disabled={running} onClick={onClose}>
+          <Button disabled={running || !!switching} onClick={onClose}>
             {t('proxies.speedtest.close')}
           </Button>
           {running ? (
@@ -595,7 +735,14 @@ function SpeedTestDialog({ open, groupName = '', onClose }: Props) {
             <Button
               variant="contained"
               startIcon={<PlayArrowRounded />}
-              disabled={!targets.length || !valid || loading}
+              disabled={
+                !targets.length ||
+                !!activeRun ||
+                !valid ||
+                loading ||
+                !!switching ||
+                profile === null
+              }
               onClick={() => void start()}
             >
               {t('proxies.speedtest.start')}

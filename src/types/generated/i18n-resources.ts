@@ -609,8 +609,12 @@ export interface TranslationResources {
         both: string
         clearSelection: string
         close: string
+        currentNode: string
         delay: string
         description: string
+        downloadFailed: string
+        downloadOne: string
+        downloadOneHint: string
         downloadOnly: string
         downloadUrl: string
         empty: string
@@ -622,18 +626,27 @@ export interface TranslationResources {
         loadFailed: string
         megabytes: string
         node: string
+        nodeUnavailable: string
         pickHint: string
+        profileChanged: string
         realDownload: string
+        savedHint: string
+        saveFailed: string
         seconds: string
         selected: string
         selectVisible: string
         speed: string
         start: string
         stop: string
+        stopDownload: string
         stopFailed: string
         stopping: string
+        switched: string
+        switching: string
+        targetGroup: string
         title: string
         traffic: string
+        useNode: string
       }
     }
     rules: {

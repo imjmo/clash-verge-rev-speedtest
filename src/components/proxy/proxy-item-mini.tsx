@@ -11,6 +11,8 @@ import {
   type ResolvedProxyMember,
 } from '@/types/proxy-view'
 
+import { SpeedtestBadge } from './speedtest-badge'
+
 interface Props {
   group: ProxyGroupView
   member: ResolvedProxyMember
@@ -31,10 +33,8 @@ export const ProxyItemMini = (props: Props) => {
   const { t } = useTranslation()
 
   // -1/<=0 为不显示，-2 为 loading
-  const { delayValue, isPreset, timeout, onDelay } = useProxyDelayState(
-    member,
-    group.name,
-  )
+  const { delayValue, isPreset, timeout, onDelay, speedtestResult } =
+    useProxyDelayState(member, group.name)
 
   return (
     <ListItemButton
@@ -81,7 +81,10 @@ export const ProxyItemMini = (props: Props) => {
         },
       ]}
     >
-      <Box title={`${name}\n${now ?? ''}`} sx={{ overflow: 'hidden' }}>
+      <Box
+        title={`${name}\n${now ?? ''}`}
+        sx={{ overflow: 'hidden', minWidth: 0, flex: 1 }}
+      >
         <Typography
           variant="body2"
           component="div"
@@ -155,8 +158,17 @@ export const ProxyItemMini = (props: Props) => {
         )}
       </Box>
       <Box
-        sx={{ ml: 0.5, color: 'primary.main', display: isPreset ? 'none' : '' }}
+        sx={{
+          ml: 0.5,
+          color: 'primary.main',
+          display: isPreset ? 'none' : 'flex',
+          alignItems: 'center',
+          flexShrink: 0,
+        }}
       >
+        {member.kind === 'node' && !isPreset && (
+          <SpeedtestBadge result={speedtestResult} node={name} />
+        )}
         {!unresolved && delayValue === -2 && (
           <Widget>
             <BaseLoading />

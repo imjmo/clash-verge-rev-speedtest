@@ -1,8 +1,15 @@
 import { useLockFn } from 'ahooks'
 import { useCallback, useEffect, useReducer } from 'react'
 
+import {
+  useNodeSpeedtestResult,
+  useSpeedtestProfile,
+} from '@/hooks/use-speedtest-results'
 import { useVerge } from '@/hooks/use-verge'
 import delayManager, { type DelayUpdate } from '@/services/delay'
+import { showNotice } from '@/services/notice-service'
+import { saveSpeedtestResult } from '@/services/speedtest-results'
+import type { SavedSpeedtestResult } from '@/services/speedtest-results'
 import {
   isInteractableMember,
   memberDetails,
@@ -22,6 +29,7 @@ const identity = (_: DelayUpdate, next: DelayUpdate): DelayUpdate => next
 const INITIAL_DELAY: DelayUpdate = { delay: -1, updatedAt: 0 }
 
 export interface UseProxyDelayState {
+  speedtestResult?: SavedSpeedtestResult
   delayState: DelayUpdate
   delayValue: number
   isPreset: boolean
@@ -34,6 +42,8 @@ export function useProxyDelayState(
   groupName: string,
 ): UseProxyDelayState {
   const name = member.ref.name
+  const profile = useSpeedtestProfile()
+  const speedtestResult = useNodeSpeedtestResult(name, profile)
   const details = memberDetails(member)
   const unresolved = member.kind === 'unresolved'
   const isPreset = unresolved || PRESET_PROXY_NAMES.includes(name)
@@ -86,12 +96,35 @@ export function useProxyDelayState(
   const onDelay = useLockFn(async () => {
     if (!isInteractableMember(member)) return
     setDelayState({ delay: -2, updatedAt: Date.now() })
-    setDelayState(await delayManager.checkDelay(member, groupName, timeout))
+    const result = await delayManager.checkDelay(member, groupName, timeout)
+    setDelayState(result)
+    if (member.kind === 'node' && profile !== null) {
+      const measured = result.delay > 0 && result.delay < timeout
+      const saved = saveSpeedtestResult(
+        profile,
+        {
+          node: name,
+          delay: measured ? result.delay : null,
+          delayError: measured ? null : 'Latency test failed or timed out',
+          bytesPerSecond: null,
+          bytes: 0,
+          downloadError: null,
+        },
+        { latency: true, download: false },
+        result.updatedAt,
+      )
+      if (!saved) showNotice.error('proxies.speedtest.saveFailed')
+    }
   })
 
   return {
+    speedtestResult,
     delayState,
-    delayValue: delayState.delay,
+    delayValue:
+      delayState.delay !== -2 &&
+      (speedtestResult?.delayTestedAt ?? 0) > delayState.updatedAt
+        ? (speedtestResult?.delay ?? 100001)
+        : delayState.delay,
     isPreset,
     timeout,
     onDelay,

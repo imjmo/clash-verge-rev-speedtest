@@ -6,6 +6,19 @@ test, and choose latency, download, or both. Click a result column to reverse it
 sort order. A separate test of one metric preserves the other metric's result.
 Failed and untested measurements sort last.
 
+Results are saved locally per subscription and survive closing the dialog or
+restarting the app. A new measurement replaces only that node's tested metric;
+stopping a run retains earlier results for nodes that have not completed. Hover
+over a result to see when it was measured. Node cards show the saved download
+speed beside latency. Click the download icon or speed to test that node alone
+(up to 5 seconds / 20 MiB); click again to stop. The existing latency click still
+tests only latency and preserves the download result.
+
+In the dialog, choose **Apply to group** and click **Use node**. The choice is
+applied to the running core and saved with the same selection persistence used
+by the proxy page. Nested selectable groups are updated from the leaf upward.
+This changes the chosen group's route; other rule groups keep their selections.
+
 Downloads use an isolated mihomo process and an authenticated loopback listener
 bound to a dedicated selector. The main application's selected proxy and routing
 rules are not changed. The selector includes subscription provider nodes. Both

@@ -148,6 +148,19 @@
     "stopping": "正在停止…",
     "start": "開始測試",
     "loadFailed": "無法載入節點，請檢查核心是否執行。",
-    "stopFailed": "停止測試失敗，請重試。"
+    "stopFailed": "停止測試失敗，請重試。",
+    "targetGroup": "套用至群組",
+    "savedHint": "結果自動保留。選擇套用群組後，可將測得的節點設為目前節點。",
+    "useNode": "使用節點",
+    "currentNode": "目前節點",
+    "switching": "切換中…",
+    "switched": "已將「{{group}}」切換為「{{node}}」",
+    "saveFailed": "結果已顯示，但無法儲存至本機。",
+    "profileChanged": "目前訂閱已變更，請重新開啟測速視窗後再切換節點。",
+    "nodeUnavailable": "該節點已不在此群組的可選範圍內，請重新整理訂閱。",
+    "downloadOne": "測試「{{node}}」的下載速度",
+    "downloadOneHint": "測試此節點的下載速度（最多 5 秒 / 20 MiB）",
+    "stopDownload": "停止下載測速",
+    "downloadFailed": "下載測速失敗"
   }
 }

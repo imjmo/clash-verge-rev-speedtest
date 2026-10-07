@@ -148,6 +148,19 @@
     "stopping": "Stopping…",
     "start": "Start test",
     "loadFailed": "Could not load nodes. Check that the core is running.",
-    "stopFailed": "Could not stop the test. Please try again."
+    "stopFailed": "Could not stop the test. Please try again.",
+    "targetGroup": "Apply to group",
+    "savedHint": "Results are saved automatically. Select a group to use a tested node.",
+    "useNode": "Use node",
+    "currentNode": "Current node",
+    "switching": "Switching…",
+    "switched": "{{group}} now uses {{node}}",
+    "saveFailed": "Results are displayed, but could not be saved locally.",
+    "profileChanged": "The active profile changed. Reopen the speed test before switching nodes.",
+    "nodeUnavailable": "This node is no longer selectable in that group. Refresh the profile.",
+    "downloadOne": "Test download speed for {{node}}",
+    "downloadOneHint": "Test this node’s download speed (up to 5 s / 20 MiB)",
+    "stopDownload": "Stop download test",
+    "downloadFailed": "Download test failed"
   }
 }

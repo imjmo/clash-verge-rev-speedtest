@@ -21,6 +21,8 @@ import {
   type ResolvedProxyMember,
 } from '@/types/proxy-view'
 
+import { SpeedtestBadge } from './speedtest-badge'
+
 interface Props {
   group: ProxyGroupView
   member: ResolvedProxyMember
@@ -58,10 +60,8 @@ export const ProxyItem = (props: Props) => {
   const now = member.kind === 'group' ? member.group.now : undefined
 
   // -1/<=0 为不显示，-2 为 loading
-  const { delayValue, isPreset, timeout, onDelay } = useProxyDelayState(
-    member,
-    group.name,
-  )
+  const { delayValue, isPreset, timeout, onDelay, speedtestResult } =
+    useProxyDelayState(member, group.name)
 
   return (
     <ListItem sx={sx}>
@@ -98,6 +98,14 @@ export const ProxyItem = (props: Props) => {
         ]}
       >
         <ListItemText
+          sx={{
+            minWidth: 0,
+            '& .MuiListItemText-secondary': {
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            },
+          }}
           title={name}
           secondary={
             <>
@@ -107,6 +115,10 @@ export const ProxyItem = (props: Props) => {
                   marginRight: '8px',
                   fontSize: '14px',
                   color: 'text.primary',
+                  maxWidth: '100%',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  verticalAlign: 'bottom',
                 }}
               >
                 {name}
@@ -132,8 +144,12 @@ export const ProxyItem = (props: Props) => {
           }
         />
 
+        {member.kind === 'node' && !isPreset && (
+          <SpeedtestBadge result={speedtestResult} node={name} />
+        )}
         <ListItemIcon
           sx={{
+            flexShrink: 0,
             justifyContent: 'flex-end',
             color: 'primary.main',
             display: isPreset ? 'none' : '',
