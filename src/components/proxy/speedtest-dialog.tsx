@@ -281,6 +281,8 @@ function SpeedTestDialog({ open, groupName = '', onClose }: Props) {
     <Dialog
       open={open}
       onClose={running ? undefined : onClose}
+      // Portal clicks still bubble through the owning proxy group's header.
+      onClick={(event) => event.stopPropagation()}
       fullWidth
       maxWidth="md"
     >
@@ -620,7 +622,10 @@ export function SpeedTestButton({
         <Button
           startIcon={<SpeedRounded />}
           variant="outlined"
-          onClick={() => setOpen(true)}
+          onClick={(event) => {
+            event.stopPropagation()
+            setOpen(true)
+          }}
         >
           {t('proxies.speedtest.title')}
         </Button>
