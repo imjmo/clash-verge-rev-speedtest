@@ -65,17 +65,29 @@ disabled by GitHub. If necessary, re-enable the workflow or run it manually.
 
 It merges the release into a candidate branch, then calls the Windows build
 workflow explicitly: pushes made with `GITHUB_TOKEN` do not trigger another push
-workflow. A conflict fails with a list of conflicting files in the run summary.
+workflow. The speedtest implementation lives in separate modules. The entry
+buttons, command registration and updater guards are reapplied to the new
+upstream files by `scripts/speedtest-overlay.mjs`. Each insertion must find one
+unambiguous anchor; existing fork edits must exactly match the recorded overlay
+before they can be replaced. The native latency hook stays unchanged; a separate
+speedtest hook adds saved measurements to node cards.
+
+This avoids nearby import and insertion conflicts without discarding upstream
+changes. It is not a plugin API: changes to an anchor, node-card layout, or a
+dependency can still require adaptation. Other files use ordinary Git merging.
+A conflict fails with a list of conflicting files in the run summary.
 The candidate retains this fork's workflow files because `GITHUB_TOKEN` cannot
 push workflow changes. The summary lists upstream CI differences for separate
 review; application code and build dependencies still follow the stable release.
-A build failure leaves the candidate available for repair. Neither case changes
+A build failure leaves the candidate available for repair. Rerunning upstream
+update reuses the candidate and reruns its checks and build. Neither case changes
 the working `speedtest` branch or installs anything on your computer.
 
-After checking a candidate installer, merge its branch into `speedtest` using a
-normal merge (not a squash or rebase), preserving the upstream merge history.
-The next update will retain these changes. No manual reapplication of the feature
-is needed when upstream is compatible.
+After all checks and the Windows build succeed, the workflow advances `speedtest`
+to that exact tested commit, retaining upstream merge history. It refuses to
+advance if either branch changed during the build. The installer remains an
+artifact of the update run; download and install it manually. Compatible releases
+therefore require no editing, merging, or manual build dispatch.
 
 ## Validation
 

@@ -19,6 +19,8 @@ jobs:
     outputs:
       changed: ${{ steps.sync.outputs.changed }}
       ref: ${{ steps.sync.outputs.ref }}
+      base: ${{ steps.sync.outputs.base }}
+      branch: ${{ steps.sync.outputs.branch }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -40,3 +42,21 @@ jobs:
     uses: ./.github/workflows/speedtest-build.yml
     with:
       ref: ${{ needs.sync.outputs.ref }}
+  promote:
+    needs: [sync, build]
+    if: needs.sync.outputs.changed == 'true' && needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: speedtest
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Advance stable branch to the tested candidate
+        env:
+          SPEEDTEST_BASE: ${{ needs.sync.outputs.base }}
+          SPEEDTEST_REF: ${{ needs.sync.outputs.ref }}
+          SPEEDTEST_BRANCH: ${{ needs.sync.outputs.branch }}
+        run: node scripts/speedtest-promote.mjs

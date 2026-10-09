@@ -1,6 +1,8 @@
 import { execFileSync, spawnSync } from 'node:child_process'
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
 
+import { prepareOverlay } from './speedtest-overlay.mjs'
+
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim()
 const output = (key, value) =>
   appendFileSync(process.env.GITHUB_OUTPUT, `${key}=${value}\n`)
@@ -39,19 +41,50 @@ git(
   'fetch',
   '--no-tags',
   `https://github.com/${metadata.upstream}.git`,
+  `refs/tags/${metadata.tag}`,
+)
+const previousUpstream = git('rev-parse', 'FETCH_HEAD^{commit}')
+git(
+  'fetch',
+  '--no-tags',
+  `https://github.com/${metadata.upstream}.git`,
   `refs/tags/${tag}`,
 )
 const upstream = git('rev-parse', 'FETCH_HEAD^{commit}')
 const base = git('rev-parse', 'HEAD')
 const branch = `speedtest-update/${tag}-${base.slice(0, 8)}`
+output('base', base)
+output('branch', branch)
 const existing = git('ls-remote', '--heads', 'origin', `refs/heads/${branch}`)
 if (existing) {
+  git('fetch', 'origin', `refs/heads/${branch}`)
+  const candidate = git('rev-parse', 'FETCH_HEAD^{commit}')
+  git('merge-base', '--is-ancestor', base, candidate)
+  git('merge-base', '--is-ancestor', upstream, candidate)
+  if (git('diff', '--name-only', base, candidate, '--', '.github/workflows'))
+    throw new Error('Candidate workflow files differ from the stable branch')
+  const candidateMetadata = JSON.parse(
+    git('show', `${candidate}:.github/speedtest-base.json`),
+  )
+  if (candidateMetadata.tag !== tag)
+    throw new Error('Candidate upstream version does not match the release')
+  output('changed', 'true')
+  output('ref', candidate)
   summary(
-    `Candidate already exists: ${branch}. Inspect or rerun its Windows build.`,
+    `Reusing candidate ${branch}. Its checks and Windows build will run again before promotion.`,
   )
   process.exit(0)
 }
 git('switch', '-c', branch)
+let overlay
+try {
+  overlay = prepareOverlay(previousUpstream, base, upstream)
+} catch (error) {
+  summary(
+    `Upgrade to ${tag} needs an integration adjustment. The speedtest branch was not changed.\n\n${error.message}`,
+  )
+  throw error
+}
 git('config', 'user.name', 'github-actions[bot]')
 git(
   'config',
@@ -69,6 +102,11 @@ const workflowChanges = git(
   '--',
   '.github/workflows',
 )
+const merging = spawnSync('git', ['rev-parse', '--verify', 'MERGE_HEAD'])
+if (merge.status !== 0 && merging.status !== 0)
+  throw new Error(`Upstream merge could not start: ${merge.stderr}`)
+for (const [file, text] of overlay) writeFileSync(file, text)
+git('add', '--', ...overlay.map(([file]) => file))
 // GITHUB_TOKEN cannot push changed workflow files. Keep this fork's CI intact.
 git(
   'restore',
@@ -84,8 +122,7 @@ if (workflowChanges)
     `Retained this fork's workflows. Review upstream CI changes separately:\n\n\`\`\`\n${workflowChanges}\n\`\`\``,
   )
 const conflicts = git('diff', '--name-only', '--diff-filter=U')
-const merging = spawnSync('git', ['rev-parse', '--verify', 'MERGE_HEAD'])
-if (conflicts || (merge.status !== 0 && merging.status !== 0)) {
+if (conflicts) {
   summary(
     `Upgrade to ${tag} needs attention. The speedtest branch was not changed.\n\nConflicting files:\n\n\`\`\`\n${conflicts}\n\`\`\``,
   )
@@ -103,5 +140,5 @@ output('changed', 'true')
 output('ref', git('rev-parse', 'HEAD'))
 output('branch', branch)
 summary(
-  `Merged ${tag} into candidate branch ${branch}. The Windows build runs next. The stable speedtest branch remains unchanged until the candidate is verified and merged.`,
+  `Merged ${tag} and reapplied the speedtest integration to candidate ${branch}. The stable branch advances only after its checks and Windows build succeed.`,
 )

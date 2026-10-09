@@ -45,8 +45,10 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Check speedtest behavior
         run: pnpm exec vitest run src/services/speedtest.test.ts
+      - name: Verify upstream overlay, retry and promotion protection
+        run: node --test scripts/speedtest-sync.test.mjs
       - name: Check changed frontend code
-        run: pnpm exec eslint src/components/proxy/speedtest-dialog.tsx src/components/proxy/speedtest-badge.tsx src/components/proxy/proxy-item.tsx src/components/proxy/proxy-item-mini.tsx src/hooks/use-speedtest-results.ts src/hooks/use-proxy-delay-state.ts src/services/speedtest.ts src/services/speedtest-results.ts src/services/speedtest.test.ts --max-warnings=0
+        run: pnpm exec eslint src/components/proxy/speedtest-dialog.tsx src/components/proxy/speedtest-badge.tsx src/components/proxy/proxy-item.tsx src/components/proxy/proxy-item-mini.tsx src/hooks/use-speedtest-results.ts src/hooks/use-speedtest-delay-state.ts src/services/speedtest.ts src/services/speedtest-results.ts src/services/speedtest.test.ts --max-warnings=0
       - name: Prepare core and service
         run: pnpm prebuild x86_64-pc-windows-msvc
       - name: Verify routing with real core and local test nodes

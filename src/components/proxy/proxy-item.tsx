@@ -13,7 +13,7 @@ import {
 import { useTranslation } from 'react-i18next'
 
 import { BaseLoading } from '@/components/base'
-import { useProxyDelayState } from '@/hooks/use-proxy-delay-state'
+import { useSpeedtestDelayState as useProxyDelayState } from '@/hooks/use-speedtest-delay-state'
 import delayManager from '@/services/delay'
 import {
   memberDetails,
