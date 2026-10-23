@@ -11,8 +11,12 @@ import {
   cancelSpeedtest,
   DEFAULT_SPEEDTEST_DOWNLOAD,
   runSpeedtest,
+  speedtestErrorKey,
 } from '@/services/speedtest'
-import { saveSpeedtestResult } from '@/services/speedtest-results'
+import {
+  resetSpeedtestResults,
+  saveSpeedtestResult,
+} from '@/services/speedtest-results'
 import type { SavedSpeedtestResult } from '@/services/speedtest-results'
 
 export function SpeedtestBadge({
@@ -34,6 +38,8 @@ export function SpeedtestBadge({
         await cancelSpeedtest(active.id)
         return
       }
+      if (!resetSpeedtestResults(profile, [node], false))
+        showNotice.error('proxies.speedtest.saveFailed')
       await runSpeedtest(
         {
           id: crypto.randomUUID(),
@@ -96,7 +102,7 @@ export function SpeedtestBadge({
         {result?.downloadTestedAt &&
           (speed != null
             ? `${(speed / 1024 / 1024).toFixed(1)} MiB/s`
-            : t('proxies.speedtest.failed'))}
+            : t(speedtestErrorKey(result.downloadError ?? '')))}
       </ButtonBase>
     </Tooltip>
   )

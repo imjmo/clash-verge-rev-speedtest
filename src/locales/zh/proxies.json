@@ -129,7 +129,7 @@
     "latencyOnly": "仅测延迟",
     "downloadOnly": "仅测下载",
     "both": "延迟 + 下载",
-    "seconds": "时间上限（秒）",
+    "seconds": "下载时长（秒）",
     "megabytes": "流量上限（MiB/节点）",
     "downloadUrl": "下载测试地址",
     "traffic": "预计下载流量不超过约 {{mb}} MiB；节点逐个测试。",
@@ -159,8 +159,20 @@
     "profileChanged": "当前订阅已变化，请重新打开测速窗口后再切换节点。",
     "nodeUnavailable": "该节点已不在此分组的可选范围内，请刷新订阅。",
     "downloadOne": "测试「{{node}}」的下载速度",
-    "downloadOneHint": "测试此节点的下载速度（最多 5 秒 / 20 MiB）",
+    "downloadOneHint": "测试此节点：下载最多 5 秒 / 20 MiB，连接准备另有最多 15 秒",
     "stopDownload": "停止下载测速",
-    "downloadFailed": "下载测速失败"
+    "downloadFailed": "下载测速失败",
+    "connectionHint": "连接准备另有最多 15 秒；默认下载服务器为 CacheFly。",
+    "rateLimited": "服务器限流",
+    "accessDenied": "服务器拒绝",
+    "timedOut": "连接超时",
+    "noData": "未收到数据",
+    "rateLimitedHint": "下载服务器返回 HTTP 429（请求过多），已停止本轮测试；剩余节点尚未测试。请稍后重试，或更换下载测试地址。",
+    "stage": {
+      "preparing": "准备中…",
+      "latency": "测延迟…",
+      "connecting": "连接中…",
+      "download": "下载中…"
+    }
   }
 }

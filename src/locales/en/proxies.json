@@ -129,7 +129,7 @@
     "latencyOnly": "Latency only",
     "downloadOnly": "Download only",
     "both": "Latency + download",
-    "seconds": "Time limit (seconds)",
+    "seconds": "Download duration (seconds)",
     "megabytes": "Data limit (MiB/node)",
     "downloadUrl": "Download URL",
     "traffic": "Up to approximately {{mb}} MiB of download data. Each node is tested separately.",
@@ -159,8 +159,20 @@
     "profileChanged": "The active profile changed. Reopen the speed test before switching nodes.",
     "nodeUnavailable": "This node is no longer selectable in that group. Refresh the profile.",
     "downloadOne": "Test download speed for {{node}}",
-    "downloadOneHint": "Test this node’s download speed (up to 5 s / 20 MiB)",
+    "downloadOneHint": "Test this node: up to 5 seconds / 20 MiB of downloading, plus up to 15 seconds to connect",
     "stopDownload": "Stop download test",
-    "downloadFailed": "Download test failed"
+    "downloadFailed": "Download test failed",
+    "connectionHint": "Connection setup allows an additional 15 seconds. The default download server is CacheFly.",
+    "rateLimited": "Server rate limit",
+    "accessDenied": "Server denied access",
+    "timedOut": "Connection timeout",
+    "noData": "No download data",
+    "rateLimitedHint": "The download server returned HTTP 429 (too many requests). The batch has stopped; remaining nodes are untested. Wait before retrying or choose another download server.",
+    "stage": {
+      "preparing": "Preparing…",
+      "latency": "Testing latency…",
+      "connecting": "Connecting…",
+      "download": "Downloading…"
+    }
   }
 }

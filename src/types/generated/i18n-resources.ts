@@ -606,10 +606,12 @@ export interface TranslationResources {
         }
       }
       speedtest: {
+        accessDenied: string
         allGroups: string
         both: string
         clearSelection: string
         close: string
+        connectionHint: string
         currentNode: string
         delay: string
         description: string
@@ -626,10 +628,13 @@ export interface TranslationResources {
         latencyOnly: string
         loadFailed: string
         megabytes: string
+        noData: string
         node: string
         nodeUnavailable: string
         pickHint: string
         profileChanged: string
+        rateLimited: string
+        rateLimitedHint: string
         realDownload: string
         savedHint: string
         saveFailed: string
@@ -637,6 +642,12 @@ export interface TranslationResources {
         selected: string
         selectVisible: string
         speed: string
+        stage: {
+          connecting: string
+          download: string
+          latency: string
+          preparing: string
+        }
         start: string
         stop: string
         stopDownload: string
@@ -645,6 +656,7 @@ export interface TranslationResources {
         switched: string
         switching: string
         targetGroup: string
+        timedOut: string
         title: string
         traffic: string
         useNode: string

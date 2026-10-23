@@ -37,6 +37,22 @@ pub struct SpeedtestResult {
     download_error: Option<String>,
 }
 
+#[derive(Clone, Serialize)]
+pub struct SpeedtestProgress {
+    node: String,
+    stage: &'static str,
+}
+
+fn progress(channel: Option<&Channel<SpeedtestProgress>>, node: &str, stage: &'static str) -> Result<()> {
+    if let Some(channel) = channel {
+        channel.send(SpeedtestProgress {
+            node: node.into(),
+            stage,
+        })?;
+    }
+    Ok(())
+}
+
 struct RunGuard {
     directory: PathBuf,
 }
@@ -137,15 +153,34 @@ fn prepare_assets(config: &mut Mapping, root: &std::path::Path, home: &std::path
     Ok(())
 }
 
+#[cfg(test)]
 async fn download(client: &reqwest::Client, options: &SpeedtestOptions) -> Result<(u64, f64)> {
+    download_with_progress(client, options, None, "").await
+}
+
+async fn download_with_progress(
+    client: &reqwest::Client,
+    options: &SpeedtestOptions,
+    channel: Option<&Channel<SpeedtestProgress>>,
+    node: &str,
+) -> Result<(u64, f64)> {
     let limit = options.megabytes * 1024 * 1024;
     let url = options.download_url.replace("{bytes}", &limit.to_string());
+    progress(channel, node, "connecting")?;
+    let mut response = tokio::time::timeout(
+        Duration::from_secs(15),
+        client
+            .get(url)
+            .header(reqwest::header::RANGE, format!("bytes=0-{}", limit - 1))
+            .send(),
+    )
+    .await
+    .context("Download connection timed out (15 seconds)")??
+    .error_for_status()?;
+    // DNS, proxy negotiation and TLS must not consume the download measurement window.
     let started = Instant::now();
     let deadline = started + Duration::from_secs(options.seconds);
-    let mut response = tokio::time::timeout_at(deadline, client.get(url).send())
-        .await
-        .context("Download connection timed out")??
-        .error_for_status()?;
+    progress(channel, node, "download")?;
     let mut bytes = 0;
     loop {
         match tokio::time::timeout_at(deadline, response.chunk()).await {
@@ -168,12 +203,15 @@ async fn download(client: &reqwest::Client, options: &SpeedtestOptions) -> Resul
 async fn measure(
     options: &SpeedtestOptions,
     channel: &Channel<SpeedtestResult>,
+    on_progress: Option<&Channel<SpeedtestProgress>>,
     api: &reqwest::Client,
     proxy: &reqwest::Proxy,
     base: &str,
     secret: &str,
 ) -> Result<()> {
     for node in &options.nodes {
+        progress(on_progress, node, "preparing")?;
+        let mut rate_limited = false;
         let mut result = SpeedtestResult {
             node: node.clone(),
             ..Default::default()
@@ -188,6 +226,7 @@ async fn measure(
         if selection.is_err() {
             let message = "Node unavailable in the isolated core; refresh the subscription".to_owned();
             if options.latency {
+                progress(on_progress, node, "latency")?;
                 result.delay_error = Some(message.clone());
             }
             if options.download {
@@ -195,6 +234,7 @@ async fn measure(
             }
         } else {
             if options.latency {
+                progress(on_progress, node, "latency")?;
                 let latency = async {
                     let mut url = reqwest::Url::parse(base)?;
                     url.path_segments_mut()
@@ -214,7 +254,7 @@ async fn measure(
                 .await;
                 match latency {
                     Ok(delay) => result.delay = Some(delay),
-                    Err(error) => result.delay_error = Some(error.to_string()),
+                    Err(error) => result.delay_error = Some(format!("{error:#}")),
                 }
             }
             if options.download {
@@ -227,22 +267,35 @@ async fn measure(
                     .no_zstd()
                     .redirect(reqwest::redirect::Policy::limited(5))
                     .build()?;
-                match download(&client, options).await {
+                match download_with_progress(&client, options, on_progress, node).await {
                     Ok((bytes, speed)) => {
                         result.bytes = bytes;
                         result.bytes_per_second = Some(speed);
                     }
-                    Err(error) => result.download_error = Some(error.to_string()),
+                    Err(error) => {
+                        rate_limited = error.downcast_ref::<reqwest::Error>().and_then(reqwest::Error::status)
+                            == Some(reqwest::StatusCode::TOO_MANY_REQUESTS);
+                        result.download_error = Some(format!("{error:#}"));
+                    }
                 }
             }
         }
         channel.send(result).context("Speedtest window closed")?;
+        if rate_limited {
+            bail!(
+                "Download server rate limited this run (HTTP 429); wait before retrying or choose another download server"
+            );
+        }
     }
     Ok(())
 }
 
 #[tauri::command]
-pub async fn run_speedtest(options: SpeedtestOptions, on_result: Channel<SpeedtestResult>) -> CmdResult<()> {
+pub async fn run_speedtest(
+    options: SpeedtestOptions,
+    on_result: Channel<SpeedtestResult>,
+    on_progress: Channel<SpeedtestProgress>,
+) -> CmdResult<()> {
     if options.nodes.is_empty()
         || (!options.latency && !options.download)
         || !(1..=60).contains(&options.seconds)
@@ -346,7 +399,7 @@ pub async fn run_speedtest(options: SpeedtestOptions, on_result: Channel<Speedte
                 tokio::time::sleep(Duration::from_millis(150)).await;
             }
             let proxy = reqwest::Proxy::all(format!("http://127.0.0.1:{port}"))?.basic_auth("speedtest", &secret);
-            measure(&options, &on_result, &api, &proxy, &base, &secret).await
+            measure(&options, &on_result, Some(&on_progress), &api, &proxy, &base, &secret).await
         };
         let result = tokio::select! { _ = token.cancelled() => Ok(()), result = work => result };
         let _ = child.kill().await;
@@ -380,6 +433,11 @@ mod tests {
 
     #[tokio::test]
     async fn each_node_uses_a_fresh_download_connection() -> Result<()> {
+        check_batch_connections(false).await?;
+        check_batch_connections(true).await
+    }
+
+    async fn check_batch_connections(rate_limited: bool) -> Result<()> {
         use std::sync::{
             Arc,
             atomic::{AtomicUsize, Ordering},
@@ -412,11 +470,12 @@ mod tests {
                         if size == 0 {
                             break;
                         }
-                        if stream
-                            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\ndata")
-                            .await
-                            .is_err()
-                        {
+                        let response: &[u8] = if rate_limited {
+                            b"HTTP/1.1 429 Too Many Requests\r\nContent-Length: 0\r\n\r\n"
+                        } else {
+                            b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\ndata"
+                        };
+                        if stream.write_all(response).await.is_err() {
                             break;
                         }
                     }
@@ -435,22 +494,28 @@ mod tests {
         };
         let channel = Channel::new(|_| Ok(()));
         let api = reqwest::Client::builder().no_proxy().build()?;
-        let result = measure(&options, &channel, &api, &proxy, &base, "test").await;
+        let result = measure(&options, &channel, None, &api, &proxy, &base, "test").await;
         selector_task.abort();
         server.abort();
-        result?;
-        assert_eq!(connections.load(Ordering::SeqCst), 2);
+        if rate_limited {
+            assert!(result.unwrap_err().to_string().contains("HTTP 429"));
+            assert_eq!(connections.load(Ordering::SeqCst), 1);
+        } else {
+            result?;
+            assert_eq!(connections.load(Ordering::SeqCst), 2);
+        }
         Ok(())
     }
 
     #[tokio::test]
-    async fn stalled_download_returns_partial_data_at_the_deadline() -> Result<()> {
+    async fn slow_connection_does_not_consume_download_time_and_stalled_body_returns_partial_data() -> Result<()> {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let address = listener.local_addr()?;
         let server = tokio::spawn(async move {
             let (mut stream, _) = listener.accept().await?;
             let mut request = [0; 4096];
             stream.read(&mut request).await?;
+            tokio::time::sleep(Duration::from_millis(1200)).await;
             stream
                 .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 1000000\r\n\r\npartial-data")
                 .await?;
@@ -473,7 +538,8 @@ mod tests {
         let (bytes, speed) = outcome?;
         assert_eq!(bytes, 12);
         assert!(speed > 0.0);
-        assert!(started.elapsed() < Duration::from_secs(3));
+        assert!(started.elapsed() >= Duration::from_secs(2));
+        assert!(started.elapsed() < Duration::from_secs(4));
         Ok(())
     }
 }

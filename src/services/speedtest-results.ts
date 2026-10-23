@@ -2,6 +2,7 @@ import type { SpeedtestResult } from './speedtest'
 
 export interface SavedSpeedtestResult extends SpeedtestResult {
   delayTestedAt?: number
+  delayClearedAt?: number
   downloadTestedAt?: number
 }
 
@@ -56,6 +57,7 @@ export function saveSpeedtestResult(
         ? result.delayError
         : (old?.delayError ?? null),
       delayTestedAt: metrics.latency ? testedAt : old?.delayTestedAt,
+      delayClearedAt: metrics.latency ? undefined : old?.delayClearedAt,
       bytesPerSecond: metrics.download
         ? result.bytesPerSecond
         : (old?.bytesPerSecond ?? null),
@@ -66,6 +68,34 @@ export function saveSpeedtestResult(
       downloadTestedAt: metrics.download ? testedAt : old?.downloadTestedAt,
     },
   }
+  return persistResults(profile, next)
+}
+
+export function resetSpeedtestResults(
+  profile: string,
+  nodes: string[],
+  latency = true,
+  clearedAt = Date.now(),
+) {
+  const next = { ...getSpeedtestResults(profile) }
+  for (const node of nodes) {
+    const old = next[node]
+    next[node] = {
+      node,
+      delay: latency ? null : (old?.delay ?? null),
+      delayError: latency ? null : (old?.delayError ?? null),
+      delayTestedAt: latency ? undefined : old?.delayTestedAt,
+      delayClearedAt: latency ? clearedAt : old?.delayClearedAt,
+      bytesPerSecond: null,
+      bytes: 0,
+      downloadError: null,
+      downloadTestedAt: undefined,
+    }
+  }
+  return persistResults(profile, next)
+}
+
+function persistResults(profile: string, next: Results) {
   snapshots.set(profile, next)
   let saved = true
   try {

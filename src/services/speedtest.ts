@@ -21,12 +21,27 @@ export interface SpeedtestOptions {
 }
 
 export const DEFAULT_SPEEDTEST_DOWNLOAD =
-  'https://speed.cloudflare.com/__down?bytes={bytes}'
+  'https://cachefly.cachefly.net/100mb.test'
+
+export interface SpeedtestProgress {
+  node: string
+  stage: 'preparing' | 'latency' | 'connecting' | 'download'
+}
+
+export function speedtestErrorKey(error: string) {
+  if (/\b429\b/.test(error)) return 'proxies.speedtest.rateLimited' as const
+  if (/\b403\b/.test(error)) return 'proxies.speedtest.accessDenied' as const
+  if (/timed? ?out/i.test(error)) return 'proxies.speedtest.timedOut' as const
+  if (/No download data/i.test(error))
+    return 'proxies.speedtest.noData' as const
+  return 'proxies.speedtest.failed' as const
+}
 
 interface ActiveSpeedtest {
   id: string
   profile: string
   node?: string
+  current?: SpeedtestProgress
 }
 let activeSpeedtest: ActiveSpeedtest | null = null
 const runListeners = new Set<() => void>()
@@ -48,8 +63,18 @@ export const runSpeedtest = async (
   runListeners.forEach((listener) => listener())
   const onResultChannel = new Channel<SpeedtestResult>()
   onResultChannel.onmessage = onResult
+  const onProgressChannel = new Channel<SpeedtestProgress>()
+  onProgressChannel.onmessage = (current) => {
+    if (activeSpeedtest?.id !== options.id) return
+    activeSpeedtest = { ...activeSpeedtest, current }
+    runListeners.forEach((listener) => listener())
+  }
   try {
-    await invoke<void>('run_speedtest', { options, onResult: onResultChannel })
+    await invoke<void>('run_speedtest', {
+      options,
+      onResult: onResultChannel,
+      onProgress: onProgressChannel,
+    })
   } finally {
     activeSpeedtest = null
     runListeners.forEach((listener) => listener())

@@ -129,7 +129,7 @@
     "latencyOnly": "僅測延遲",
     "downloadOnly": "僅測下載",
     "both": "延遲 + 下載",
-    "seconds": "時間上限（秒）",
+    "seconds": "下載時長（秒）",
     "megabytes": "流量上限（MiB/節點）",
     "downloadUrl": "下載測試位址",
     "traffic": "預計下載流量不超過約 {{mb}} MiB；節點逐一測試。",
@@ -159,8 +159,20 @@
     "profileChanged": "目前訂閱已變更，請重新開啟測速視窗後再切換節點。",
     "nodeUnavailable": "該節點已不在此群組的可選範圍內，請重新整理訂閱。",
     "downloadOne": "測試「{{node}}」的下載速度",
-    "downloadOneHint": "測試此節點的下載速度（最多 5 秒 / 20 MiB）",
+    "downloadOneHint": "測試此節點：下載最多 5 秒 / 20 MiB，連線準備另有最多 15 秒",
     "stopDownload": "停止下載測速",
-    "downloadFailed": "下載測速失敗"
+    "downloadFailed": "下載測速失敗",
+    "connectionHint": "連線準備另有最多 15 秒；預設下載伺服器為 CacheFly。",
+    "rateLimited": "伺服器限流",
+    "accessDenied": "伺服器拒絕",
+    "timedOut": "連線逾時",
+    "noData": "未收到資料",
+    "rateLimitedHint": "下載伺服器回傳 HTTP 429（請求過多），已停止本輪測試；剩餘節點尚未測試。請稍後重試，或更換下載測試網址。",
+    "stage": {
+      "preparing": "準備中…",
+      "latency": "測延遲…",
+      "connecting": "連線中…",
+      "download": "下載中…"
+    }
   }
 }

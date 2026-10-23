@@ -3,12 +3,12 @@
 This fork adds a node speed test panel to Clash Verge Rev. Open it from a proxy
 group's speedometer button or the Tests page. Filter nodes, select the nodes to
 test, and choose latency, download, or both. Click a result column to reverse its
-sort order. A separate test of one metric preserves the other metric's result.
+sort order. Starting a batch clears both old metrics for every selected node.
 Failed and untested measurements sort last.
 
 Results are saved locally per subscription and survive closing the dialog or
-restarting the app. A new measurement replaces only that node's tested metric;
-stopping a run retains earlier results for nodes that have not completed. Hover
+restarting the app. Unselected nodes retain their results; stopping a batch leaves
+unfinished nodes without results. Single-node card tests preserve the other metric. Hover
 over a result to see when it was measured. Node cards show the saved download
 speed beside latency. Click the download icon or speed to test that node alone
 (up to 5 seconds / 20 MiB); click again to stop. The existing latency click still
@@ -23,7 +23,12 @@ Downloads use an isolated mihomo process and an authenticated loopback listener
 bound to a dedicated selector. The main application's selected proxy and routing
 rules are not changed. The selector includes subscription provider nodes. Both
 tests run sequentially, with latency first; downloads run one node at a time.
-The displayed rate is MiB/s, measured over the request including connection time.
+The displayed rate is MiB/s, measured after response headers arrive. Connection
+setup has a separate 15-second timeout. Downloads default to CacheFly and stop at
+the chosen duration or payload limit. Custom URLs remain supported. HTTP 429
+stops the batch without retrying; wait or choose another server before testing
+again. Server limits, denied access, timeouts and empty downloads have distinct
+labels, with the full error available on hover.
 The data limit is approximate network consumption: protocol overhead and buffered
 data can exceed the reported payload bytes. Stop cancels the current request and
 terminates the isolated core. Temporary configuration and caches are removed after

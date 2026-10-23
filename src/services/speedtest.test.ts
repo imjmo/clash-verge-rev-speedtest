@@ -66,6 +66,47 @@ it('keeps saved metrics across reloads and separates subscriptions with identica
     downloadError: 'timeout',
     downloadTestedAt: 30,
   })
+  reloaded.saveSpeedtestResult(
+    'subscription-a',
+    { ...result, node: 'unselected' },
+    { latency: true, download: true },
+    30,
+  )
+  reloaded.saveSpeedtestResult(
+    'subscription-b',
+    result,
+    { latency: true, download: true },
+    30,
+  )
+  reloaded.resetSpeedtestResults('subscription-a', ['Hong Kong'], false, 40)
+  expect(
+    reloaded.getSpeedtestResults('subscription-a')['Hong Kong'],
+  ).toMatchObject({
+    delay: 45,
+    bytesPerSecond: null,
+    downloadTestedAt: undefined,
+  })
+  reloaded.resetSpeedtestResults('subscription-a', ['Hong Kong'], true, 50)
+  expect(
+    reloaded.getSpeedtestResults('subscription-a')['Hong Kong'],
+  ).toMatchObject({
+    delay: null,
+    bytesPerSecond: null,
+    delayTestedAt: undefined,
+    downloadTestedAt: undefined,
+    delayClearedAt: 50,
+  })
+  expect(reloaded.getSpeedtestResults('subscription-a').unselected.delay).toBe(
+    30,
+  )
+  expect(
+    reloaded.getSpeedtestResults('subscription-b')['Hong Kong'].delay,
+  ).toBe(30)
+  vi.resetModules()
+  const resetReloaded = await import('./speedtest-results')
+  expect(
+    resetReloaded.getSpeedtestResults('subscription-a')['Hong Kong'],
+  ).toMatchObject({ delay: null, bytesPerSecond: null, delayClearedAt: 50 })
 })
 
 it('selects nested groups from the leaf upward and rejects unsupported or cyclic paths', () => {

@@ -44,9 +44,12 @@ export function useSpeedtestDelayState(
     speedtestResult,
     delayValue:
       state.delayValue !== -2 &&
-      (speedtestResult?.delayTestedAt ?? 0) > state.delayState.updatedAt
-        ? (speedtestResult?.delay ?? 100001)
-        : state.delayValue,
+      (speedtestResult?.delayClearedAt ?? 0) > state.delayState.updatedAt
+        ? -1
+        : state.delayValue !== -2 &&
+            (speedtestResult?.delayTestedAt ?? 0) > state.delayState.updatedAt
+          ? (speedtestResult?.delay ?? 100001)
+          : state.delayValue,
     onDelay,
   }
 }

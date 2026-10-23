@@ -60,9 +60,13 @@ import {
   speedtestSelectionPath,
   speedtestCurrentNode,
   DEFAULT_SPEEDTEST_DOWNLOAD,
+  speedtestErrorKey,
 } from '@/services/speedtest'
 import type { SpeedtestProxy, SpeedtestSort } from '@/services/speedtest'
-import { saveSpeedtestResult } from '@/services/speedtest-results'
+import {
+  resetSpeedtestResults,
+  saveSpeedtestResult,
+} from '@/services/speedtest-results'
 
 const EXCLUDED = new Set([
   'Direct',
@@ -296,6 +300,8 @@ function SpeedTestDialog({ open, groupName = '', onClose }: Props) {
     setStopping(false)
     setError('')
     setProgress({ done: 0, total: targets.length })
+    if (!resetSpeedtestResults(profile, targets))
+      setError(t('proxies.speedtest.saveFailed'))
     try {
       await runSpeedtest(
         {
@@ -330,7 +336,11 @@ function SpeedTestDialog({ open, groupName = '', onClose }: Props) {
           typeof failure === 'object' && failure !== null && 'detail' in failure
             ? String(failure.detail)
             : String(failure)
-        setError(detail)
+        setError(
+          /\b429\b/.test(detail)
+            ? t('proxies.speedtest.rateLimitedHint')
+            : detail,
+        )
       }
     } finally {
       activeRef.current = null
@@ -489,7 +499,8 @@ function SpeedTestDialog({ open, groupName = '', onClose }: Props) {
             <Typography variant="caption" color="text.secondary">
               {t('proxies.speedtest.traffic', {
                 mb: targets.length * megabytes,
-              })}
+              })}{' '}
+              {t('proxies.speedtest.connectionHint')}
             </Typography>
           </>
         )}
@@ -635,6 +646,17 @@ function SpeedTestDialog({ open, groupName = '', onClose }: Props) {
                     </TableCell>
                     <TableCell sx={{ wordBreak: 'break-word' }}>
                       {node}
+                      {running && activeRun?.current?.node === node && (
+                        <Typography
+                          variant="caption"
+                          color="primary"
+                          sx={{ display: 'block' }}
+                        >
+                          {t(
+                            `proxies.speedtest.stage.${activeRun.current.stage}`,
+                          )}
+                        </Typography>
+                      )}
                     </TableCell>
                     <TableCell
                       align="right"
@@ -655,7 +677,7 @@ function SpeedTestDialog({ open, groupName = '', onClose }: Props) {
                           {result?.delay != null
                             ? `${result.delay} ms`
                             : result?.delayError
-                              ? t('proxies.speedtest.failed')
+                              ? t(speedtestErrorKey(result.delayError))
                               : '—'}
                         </span>
                       </Tooltip>
@@ -679,7 +701,7 @@ function SpeedTestDialog({ open, groupName = '', onClose }: Props) {
                           {result?.bytesPerSecond != null
                             ? `${(result.bytesPerSecond / 1024 / 1024).toFixed(2)} MiB/s`
                             : result?.downloadError
-                              ? t('proxies.speedtest.failed')
+                              ? t(speedtestErrorKey(result.downloadError))
                               : '—'}
                         </span>
                       </Tooltip>
