@@ -624,6 +624,7 @@ export interface TranslationResources {
         failed: string
         filter: string
         group: string
+        invalidPayload: string
         invert: string
         latencyOnly: string
         loadFailed: string

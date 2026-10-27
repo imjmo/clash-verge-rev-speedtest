@@ -171,12 +171,27 @@ async fn download_with_progress(
         Duration::from_secs(15),
         client
             .get(url)
+            .header(
+                reqwest::header::USER_AGENT,
+                concat!("Clash-Verge-Speedtest/", env!("CARGO_PKG_VERSION")),
+            )
             .header(reqwest::header::RANGE, format!("bytes=0-{}", limit - 1))
             .send(),
     )
     .await
     .context("Download connection timed out (15 seconds)")??
     .error_for_status()?;
+    if response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| {
+            let media_type = value.split(';').next().unwrap_or_default().trim();
+            media_type.eq_ignore_ascii_case("text/html") || media_type.eq_ignore_ascii_case("application/xhtml+xml")
+        })
+    {
+        bail!("Download server returned a web page instead of test data");
+    }
     // DNS, proxy negotiation and TLS must not consume the download measurement window.
     let started = Instant::now();
     let deadline = started + Duration::from_secs(options.seconds);
@@ -413,6 +428,56 @@ pub async fn run_speedtest(
 mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+
+    #[tokio::test]
+    async fn download_identifies_the_client_and_rejects_successful_html_responses() -> Result<()> {
+        for html in [false, true] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+            let address = listener.local_addr()?;
+            let server = tokio::spawn(async move {
+                let (mut stream, _) = listener.accept().await?;
+                let mut request = Vec::new();
+                while !request.ends_with(b"\r\n\r\n") {
+                    request.push(stream.read_u8().await?);
+                }
+                assert!(
+                    String::from_utf8_lossy(&request)
+                        .to_lowercase()
+                        .contains("user-agent: clash-verge-speedtest/")
+                );
+                let response: &[u8] = if html {
+                    b"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: 7\r\n\r\n100mb\r\n"
+                } else {
+                    b"HTTP/1.1 206 Partial Content\r\nContent-Type: application/octet-stream\r\nContent-Length: 4\r\n\r\ndata"
+                };
+                stream.write_all(response).await?;
+                Ok::<_, std::io::Error>(())
+            });
+            let options = SpeedtestOptions {
+                id: "response-validation".into(),
+                nodes: vec![],
+                latency: false,
+                download: true,
+                latency_url: String::new(),
+                download_url: format!("http://{address}/"),
+                seconds: 1,
+                megabytes: 1,
+            };
+            let outcome = download(&reqwest::Client::builder().no_proxy().build()?, &options).await;
+            server.await??;
+            if html {
+                assert!(
+                    outcome
+                        .unwrap_err()
+                        .to_string()
+                        .contains("web page instead of test data")
+                );
+            } else {
+                assert_eq!(outcome?.0, 4);
+            }
+        }
+        Ok(())
+    }
 
     #[test]
     fn test_core_does_not_inherit_main_listeners_or_mutate_the_profile() -> Result<()> {

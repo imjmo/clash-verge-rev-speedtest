@@ -173,6 +173,7 @@
       "latency": "測延遲…",
       "connecting": "連線中…",
       "download": "下載中…"
-    }
+    },
+    "invalidPayload": "非測速檔案"
   }
 }

@@ -29,6 +29,8 @@ export interface SpeedtestProgress {
 }
 
 export function speedtestErrorKey(error: string) {
+  if (/web page instead of test data/i.test(error))
+    return 'proxies.speedtest.invalidPayload' as const
   if (/\b429\b/.test(error)) return 'proxies.speedtest.rateLimited' as const
   if (/\b403\b/.test(error)) return 'proxies.speedtest.accessDenied' as const
   if (/timed? ?out/i.test(error)) return 'proxies.speedtest.timedOut' as const

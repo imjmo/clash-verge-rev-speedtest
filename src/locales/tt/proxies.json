@@ -173,6 +173,7 @@
       "latency": "Testing latency…",
       "connecting": "Connecting…",
       "download": "Downloading…"
-    }
+    },
+    "invalidPayload": "Not test data"
   }
 }
