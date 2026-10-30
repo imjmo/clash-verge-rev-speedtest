@@ -21,7 +21,31 @@ export interface SpeedtestOptions {
 }
 
 export const DEFAULT_SPEEDTEST_DOWNLOAD =
-  'https://cachefly.cachefly.net/100mb.test'
+  'https://cachefly.cachefly.net/50mb.test'
+
+export const SPEEDTEST_DOWNLOAD_URLS = [
+  DEFAULT_SPEEDTEST_DOWNLOAD,
+  'https://speed.cloudflare.com/__down?bytes={bytes}',
+]
+
+const DOWNLOAD_URL_KEY = 'clash-verge-speedtest-download-url'
+
+export function getSpeedtestDownloadUrl() {
+  try {
+    return localStorage.getItem(DOWNLOAD_URL_KEY) || DEFAULT_SPEEDTEST_DOWNLOAD
+  } catch {
+    return DEFAULT_SPEEDTEST_DOWNLOAD
+  }
+}
+
+export function saveSpeedtestDownloadUrl(url: string) {
+  try {
+    localStorage.setItem(DOWNLOAD_URL_KEY, url)
+    return true
+  } catch {
+    return false
+  }
+}
 
 export interface SpeedtestProgress {
   node: string

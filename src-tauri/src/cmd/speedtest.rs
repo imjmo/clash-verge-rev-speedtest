@@ -175,7 +175,7 @@ async fn download_with_progress(
                 reqwest::header::USER_AGENT,
                 concat!("Clash-Verge-Speedtest/", env!("CARGO_PKG_VERSION")),
             )
-            .header(reqwest::header::RANGE, format!("bytes=0-{}", limit - 1))
+            .header(reqwest::header::ACCEPT_ENCODING, "identity")
             .send(),
     )
     .await
@@ -445,6 +445,9 @@ mod tests {
                         .to_lowercase()
                         .contains("user-agent: clash-verge-speedtest/")
                 );
+                let request = String::from_utf8_lossy(&request).to_lowercase();
+                assert!(request.contains("accept-encoding: identity"));
+                assert!(!request.contains("\r\nrange:"));
                 let response: &[u8] = if html {
                     b"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: 7\r\n\r\n100mb\r\n"
                 } else {

@@ -24,8 +24,15 @@ bound to a dedicated selector. The main application's selected proxy and routing
 rules are not changed. The selector includes subscription provider nodes. Both
 tests run sequentially, with latency first; downloads run one node at a time.
 The displayed rate is MiB/s, measured after response headers arrive. Connection
-setup has a separate 15-second timeout. Downloads default to CacheFly and stop at
-the chosen duration or payload limit. Custom URLs remain supported. HTTP 429
+setup has a separate 15-second timeout. Downloads default to CacheFly's `50mb.test`,
+the first preset in [v2rayN's download server list](https://github.com/2dust/v2rayN/blob/57f17d5939e88c8e643ab49b90869d637765e75a/v2rayN/ServiceLib/Global.cs).
+Some CacheFly paths (including `100mb.test`) now return
+a short HTML/text placeholder on tested routes instead of a file; these responses
+are rejected rather than reported as a tiny download speed. The download URL field
+offers CacheFly and Cloudflare presets and accepts custom URLs. The last address
+used for a batch is saved and also used by single-node card tests.
+Downloads request uncompressed data without a Range header and stop reading at
+the chosen duration or payload limit, even if the server sends a larger file. HTTP 429
 stops the batch without retrying; wait or choose another server before testing
 again. Server limits, denied access, timeouts and empty downloads have distinct
 labels, with the full error available on hover.

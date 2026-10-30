@@ -174,6 +174,8 @@
       "connecting": "连接中…",
       "download": "下载中…"
     },
-    "invalidPayload": "非测速文件"
+    "invalidPayload": "下载源异常",
+    "invalidPayloadHint": "下载服务器返回了网页或短文本，没有提供测速数据。请更换下载测试地址；此结果不代表节点不可用。",
+    "downloadUrlHint": "可选择或输入下载地址；节点卡片沿用上次测试的地址。"
   }
 }

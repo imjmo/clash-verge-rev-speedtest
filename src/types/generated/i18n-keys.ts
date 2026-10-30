@@ -402,6 +402,8 @@ export const translationKeys = [
   'proxies.speedtest.stage.connecting',
   'proxies.speedtest.stage.download',
   'proxies.speedtest.invalidPayload',
+  'proxies.speedtest.invalidPayloadHint',
+  'proxies.speedtest.downloadUrlHint',
   'rules.page.provider.trigger',
   'rules.page.provider.dialogTitle',
   'rules.page.provider.actions.updateAll',

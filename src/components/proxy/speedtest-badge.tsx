@@ -9,7 +9,7 @@ import {
 import { showNotice } from '@/services/notice-service'
 import {
   cancelSpeedtest,
-  DEFAULT_SPEEDTEST_DOWNLOAD,
+  getSpeedtestDownloadUrl,
   runSpeedtest,
   speedtestErrorKey,
 } from '@/services/speedtest'
@@ -47,11 +47,17 @@ export function SpeedtestBadge({
           latency: false,
           download: true,
           latencyUrl: 'https://www.gstatic.com/generate_204',
-          downloadUrl: DEFAULT_SPEEDTEST_DOWNLOAD,
+          downloadUrl: getSpeedtestDownloadUrl(),
           seconds: 5,
           megabytes: 20,
         },
         (next) => {
+          if (
+            next.downloadError &&
+            speedtestErrorKey(next.downloadError) ===
+              'proxies.speedtest.invalidPayload'
+          )
+            showNotice.error('proxies.speedtest.invalidPayloadHint')
           if (
             !saveSpeedtestResult(profile, next, {
               latency: false,

@@ -5,6 +5,7 @@ import {
 } from '@mui/icons-material'
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   Checkbox,
@@ -59,7 +60,10 @@ import {
   isSpeedtestSelectable,
   speedtestSelectionPath,
   speedtestCurrentNode,
+  SPEEDTEST_DOWNLOAD_URLS,
   DEFAULT_SPEEDTEST_DOWNLOAD,
+  getSpeedtestDownloadUrl,
+  saveSpeedtestDownloadUrl,
   speedtestErrorKey,
 } from '@/services/speedtest'
 import type { SpeedtestProxy, SpeedtestSort } from '@/services/speedtest'
@@ -76,7 +80,6 @@ const EXCLUDED = new Set([
   'Dns',
   'Compatible',
 ])
-const DEFAULT_DOWNLOAD = DEFAULT_SPEEDTEST_DOWNLOAD
 
 interface Props {
   open: boolean
@@ -104,7 +107,7 @@ function SpeedTestDialog({ open, groupName = '', onClose }: Props) {
   const [mode, setMode] = useState<'latency' | 'download' | 'both'>('both')
   const [seconds, setSeconds] = useState(5)
   const [megabytes, setMegabytes] = useState(20)
-  const [downloadUrl, setDownloadUrl] = useState(DEFAULT_DOWNLOAD)
+  const [downloadUrl, setDownloadUrl] = useState(getSpeedtestDownloadUrl)
   const [sort, setSort] = useState<SpeedtestSort>('node')
   const [direction, setDirection] = useState<'asc' | 'desc'>('asc')
   const [loading, setLoading] = useState(false)
@@ -302,6 +305,8 @@ function SpeedTestDialog({ open, groupName = '', onClose }: Props) {
     setProgress({ done: 0, total: targets.length })
     if (!resetSpeedtestResults(profile, targets))
       setError(t('proxies.speedtest.saveFailed'))
+    if (download && !saveSpeedtestDownloadUrl(downloadUrl))
+      setError(t('proxies.speedtest.saveFailed'))
     try {
       await runSpeedtest(
         {
@@ -312,12 +317,18 @@ function SpeedTestDialog({ open, groupName = '', onClose }: Props) {
           latencyUrl:
             delayManager.getUrl(group) ||
             'https://www.gstatic.com/generate_204',
-          downloadUrl: download ? downloadUrl : DEFAULT_DOWNLOAD,
+          downloadUrl: download ? downloadUrl : DEFAULT_SPEEDTEST_DOWNLOAD,
           seconds: download ? seconds : 5,
           megabytes: download ? megabytes : 20,
         },
         (result) => {
           if (!mountedRef.current || activeRef.current !== id) return
+          if (
+            result.downloadError &&
+            speedtestErrorKey(result.downloadError) ===
+              'proxies.speedtest.invalidPayload'
+          )
+            setError(t('proxies.speedtest.invalidPayloadHint'))
           if (
             !saveSpeedtestResult(profile, result, {
               latency: mode !== 'download',
@@ -486,21 +497,34 @@ function SpeedTestDialog({ open, groupName = '', onClose }: Props) {
                 slotProps={{ htmlInput: { min: 1, max: 1024 } }}
                 sx={{ width: { xs: '100%', sm: 190 }, flexShrink: 0 }}
               />
-              <TextField
+              <Autocomplete
+                freeSolo
+                disableClearable
+                forcePopupIcon
+                selectOnFocus
                 size="small"
                 fullWidth
-                label={t('proxies.speedtest.downloadUrl')}
+                options={SPEEDTEST_DOWNLOAD_URLS}
                 value={downloadUrl}
-                error={!validUrl}
+                inputValue={downloadUrl}
                 disabled={running}
-                onChange={(event) => setDownloadUrl(event.target.value)}
+                onInputChange={(_, value) => setDownloadUrl(value)}
+                onChange={(_, value) => setDownloadUrl(value)}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label={t('proxies.speedtest.downloadUrl')}
+                    error={!validUrl}
+                  />
+                )}
               />
             </Stack>
             <Typography variant="caption" color="text.secondary">
               {t('proxies.speedtest.traffic', {
                 mb: targets.length * megabytes,
               })}{' '}
-              {t('proxies.speedtest.connectionHint')}
+              {t('proxies.speedtest.connectionHint')}{' '}
+              {t('proxies.speedtest.downloadUrlHint')}
             </Typography>
           </>
         )}

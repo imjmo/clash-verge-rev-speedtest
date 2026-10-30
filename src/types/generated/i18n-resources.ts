@@ -620,11 +620,13 @@ export interface TranslationResources {
         downloadOneHint: string
         downloadOnly: string
         downloadUrl: string
+        downloadUrlHint: string
         empty: string
         failed: string
         filter: string
         group: string
         invalidPayload: string
+        invalidPayloadHint: string
         invert: string
         latencyOnly: string
         loadFailed: string
