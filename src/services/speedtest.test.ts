@@ -1,13 +1,70 @@
+import { invoke } from '@tauri-apps/api/core'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   sortSpeedtestRows,
   speedtestSelectionPath,
   speedtestCurrentNode,
+  runSpeedtest,
+  getActiveSpeedtest,
   type SpeedtestResult,
 } from './speedtest'
 
+vi.mock('@tauri-apps/api/core', () => ({
+  Channel: class {},
+  invoke: vi.fn(),
+}))
+
 afterEach(() => vi.unstubAllGlobals())
+
+it('keeps concurrent progress per node and removes only the completed node', async () => {
+  vi.mocked(invoke).mockImplementationOnce(async (_, args) => {
+    const { onProgress, onResult } = args as {
+      onProgress: {
+        onmessage: (event: { node: string; stage: string }) => void
+      }
+      onResult: { onmessage: (result: SpeedtestResult) => void }
+    }
+    onProgress.onmessage({ node: 'slow', stage: 'connecting' })
+    onProgress.onmessage({ node: 'fast', stage: 'download' })
+    expect(getActiveSpeedtest()?.stages).toEqual({
+      slow: 'connecting',
+      fast: 'download',
+    })
+    onResult.onmessage({
+      node: 'fast',
+      delay: null,
+      bytes: 10,
+      bytesPerSecond: 10,
+      delayError: null,
+      downloadError: null,
+    })
+    expect(getActiveSpeedtest()?.stages).toEqual({ slow: 'connecting' })
+    onProgress.onmessage({ node: 'next', stage: 'latency' })
+    expect(getActiveSpeedtest()?.stages).toEqual({
+      slow: 'connecting',
+      next: 'latency',
+    })
+  })
+  const results = vi.fn()
+  await runSpeedtest(
+    {
+      id: 'concurrent',
+      nodes: ['slow', 'fast', 'next'],
+      latency: true,
+      download: true,
+      latencyUrl: 'http://latency.invalid',
+      downloadUrl: 'http://download.invalid',
+      seconds: 1,
+      megabytes: 1,
+      concurrency: 2,
+    },
+    results,
+    { profile: 'test' },
+  )
+  expect(results).toHaveBeenCalledOnce()
+  expect(getActiveSpeedtest()).toBeNull()
+})
 
 it('keeps saved metrics across reloads and separates subscriptions with identical node names', async () => {
   const disk = new Map<string, string>()

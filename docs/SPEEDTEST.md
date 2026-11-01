@@ -21,8 +21,13 @@ This changes the chosen group's route; other rule groups keep their selections.
 
 Downloads use an isolated mihomo process and an authenticated loopback listener
 bound to a dedicated selector. The main application's selected proxy and routing
-rules are not changed. The selector includes subscription provider nodes. Both
-tests run sequentially, with latency first; downloads run one node at a time.
+rules are not changed. Each concurrent worker has its own listener and selector,
+including subscription provider nodes. Choose 1–10 concurrent nodes (default 5).
+Within each node, latency runs before download; when a node finishes, that worker
+immediately takes the next queued node without waiting for other workers.
+Each active node displays its own stage. Stop cancels all active workers and leaves
+queued nodes untested. Concurrent downloads share the local connection's bandwidth;
+choose 1 to measure a node without competing tests.
 The displayed rate is MiB/s, measured after response headers arrive. Connection
 setup has a separate 15-second timeout. Downloads default to CacheFly's `50mb.test`,
 the first preset in [v2rayN's download server list](https://github.com/2dust/v2rayN/blob/57f17d5939e88c8e643ab49b90869d637765e75a/v2rayN/ServiceLib/Global.cs).
@@ -103,9 +108,9 @@ therefore require no editing, merging, or manual build dispatch.
 
 ## Validation
 
-The build runs a result-ordering regression test and an integration check with the
-real mihomo executable and two local HTTP proxies. The integration check verifies
-that selecting a different node changes the download path, that provider nodes
-are selectable, and that an unknown node is rejected. This catches routing errors
+The build runs result and scheduling regression tests and an integration check with
+the real mihomo executable and two local HTTP proxies. The integration check verifies
+that concurrent listeners keep their selected paths even while one stalls, that
+provider nodes are selectable, and that an unknown node is rejected. This catches routing errors
 that a successful UI build cannot detect. It does not certify every proxy protocol
 or replace checking a candidate with your own subscriptions.

@@ -107,6 +107,7 @@ function SpeedTestDialog({ open, groupName = '', onClose }: Props) {
   const [mode, setMode] = useState<'latency' | 'download' | 'both'>('both')
   const [seconds, setSeconds] = useState(5)
   const [megabytes, setMegabytes] = useState(20)
+  const [concurrency, setConcurrency] = useState(5)
   const [downloadUrl, setDownloadUrl] = useState(getSpeedtestDownloadUrl)
   const [sort, setSort] = useState<SpeedtestSort>('node')
   const [direction, setDirection] = useState<'asc' | 'desc'>('asc')
@@ -260,14 +261,17 @@ function SpeedTestDialog({ open, groupName = '', onClose }: Props) {
     }
   })()
   const valid =
-    !download ||
-    (validUrl &&
-      Number.isInteger(seconds) &&
-      seconds >= 1 &&
-      seconds <= 60 &&
-      Number.isInteger(megabytes) &&
-      megabytes >= 1 &&
-      megabytes <= 1024)
+    Number.isInteger(concurrency) &&
+    concurrency >= 1 &&
+    concurrency <= 10 &&
+    (!download ||
+      (validUrl &&
+        Number.isInteger(seconds) &&
+        seconds >= 1 &&
+        seconds <= 60 &&
+        Number.isInteger(megabytes) &&
+        megabytes >= 1 &&
+        megabytes <= 1024))
 
   const toggle = (names: string[], value: boolean) =>
     setSelected((previous) => {
@@ -320,6 +324,7 @@ function SpeedTestDialog({ open, groupName = '', onClose }: Props) {
           downloadUrl: download ? downloadUrl : DEFAULT_SPEEDTEST_DOWNLOAD,
           seconds: download ? seconds : 5,
           megabytes: download ? megabytes : 20,
+          concurrency,
         },
         (result) => {
           if (!mountedRef.current || activeRef.current !== id) return
@@ -474,6 +479,30 @@ function SpeedTestDialog({ open, groupName = '', onClose }: Props) {
             {t('proxies.speedtest.both')}
           </ToggleButton>
         </ToggleButtonGroup>
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={1.5}
+          sx={{ alignItems: { sm: 'center' } }}
+        >
+          <TextField
+            select
+            size="small"
+            label={t('proxies.speedtest.concurrency')}
+            value={concurrency}
+            disabled={running}
+            onChange={(event) => setConcurrency(Number(event.target.value))}
+            sx={{ minWidth: 170 }}
+          >
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((count) => (
+              <MenuItem key={count} value={count}>
+                {count}
+              </MenuItem>
+            ))}
+          </TextField>
+          <Typography variant="caption" color="text.secondary">
+            {t('proxies.speedtest.concurrencyHint')}
+          </Typography>
+        </Stack>
         {download && (
           <>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
@@ -670,14 +699,14 @@ function SpeedTestDialog({ open, groupName = '', onClose }: Props) {
                     </TableCell>
                     <TableCell sx={{ wordBreak: 'break-word' }}>
                       {node}
-                      {running && activeRun?.current?.node === node && (
+                      {running && activeRun?.stages[node] && (
                         <Typography
                           variant="caption"
                           color="primary"
                           sx={{ display: 'block' }}
                         >
                           {t(
-                            `proxies.speedtest.stage.${activeRun.current.stage}`,
+                            `proxies.speedtest.stage.${activeRun.stages[node]}`,
                           )}
                         </Typography>
                       )}

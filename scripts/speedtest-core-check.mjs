@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import http from 'node:http'
 import net from 'node:net'
 import { tmpdir } from 'node:os'
@@ -21,7 +21,15 @@ const freePort = async () => {
   return port
 }
 const directory = await mkdtemp(path.join(tmpdir(), 'cvr-speedtest-check-'))
-const alpha = http.createServer((_, response) => response.end('node-alpha'))
+let holdAlpha = false
+let releaseAlpha
+let alphaStarted
+const alpha = http.createServer((_, response) => {
+  if (holdAlpha) {
+    releaseAlpha = () => response.end('node-alpha')
+    alphaStarted()
+  } else response.end('node-alpha')
+})
 const beta = http.createServer((_, response) => response.end('node-beta'))
 for (const server of [alpha, beta]) {
   server.on('connect', (_, socket, head) => {
@@ -40,8 +48,10 @@ try {
   const alphaPort = await listen(alpha)
   const betaPort = await listen(beta)
   const port = await freePort()
+  let secondPort = await freePort()
+  while (secondPort === port) secondPort = await freePort()
   let controller = await freePort()
-  while (controller === port) controller = await freePort()
+  while ([port, secondPort].includes(controller)) controller = await freePort()
   const secret = 'local-verification-only'
   const group = '__CVR_SPEEDTEST__'
   await writeFile(
@@ -69,17 +79,19 @@ try {
           'health-check': { enable: false },
         },
       },
-      'proxy-groups': [{ name: group, type: 'select', 'include-all': true }],
-      listeners: [
-        {
-          name: 'speedtest',
-          type: 'mixed',
-          listen: '127.0.0.1',
-          port,
-          proxy: group,
-          users: [{ username: 'speedtest', password: secret }],
-        },
-      ],
+      'proxy-groups': [group, `${group}_1`].map((name) => ({
+        name,
+        type: 'select',
+        'include-all': true,
+      })),
+      listeners: [port, secondPort].map((port, index) => ({
+        name: `speedtest-${index}`,
+        type: 'mixed',
+        listen: '127.0.0.1',
+        port,
+        proxy: index === 0 ? group : `${group}_1`,
+        users: [{ username: 'speedtest', password: secret }],
+      })),
       rules: ['MATCH,REJECT'],
       profile: { 'store-selected': false },
     }),
@@ -125,12 +137,12 @@ try {
       throw new Error('Isolated core did not become ready')
     await sleep(100)
   }
-  const throughProxy = () =>
+  const throughProxy = (proxyPort = port) =>
     new Promise((resolve, reject) => {
       const request = http.get(
         {
           hostname: '127.0.0.1',
-          port,
+          port: proxyPort,
           path: 'http://127.0.0.1:1/speedtest',
           headers: {
             'Proxy-Authorization': `Basic ${Buffer.from(`speedtest:${secret}`).toString('base64')}`,
@@ -159,12 +171,28 @@ try {
     204,
   )
   assert.equal(await throughProxy(), 'node-beta')
+  await api(`/proxies/${group}`, 'PUT', { name: 'alpha' })
+  await api(`/proxies/${group}_1`, 'PUT', { name: 'beta' })
+  holdAlpha = true
+  const started = new Promise((resolve) => {
+    alphaStarted = resolve
+  })
+  const slow = throughProxy()
+  await started
+  try {
+    assert.equal(await throughProxy(secondPort), 'node-beta')
+    assert.equal(await throughProxy(secondPort), 'node-beta')
+  } finally {
+    holdAlpha = false
+    releaseAlpha()
+    assert.equal(await slow, 'node-alpha')
+  }
   assert.notEqual(
     (await api(`/proxies/${group}`, 'PUT', { name: 'missing' })).status,
     204,
   )
   console.log(
-    'Verified explicit node routing, provider nodes, and rejection of missing nodes against the real core.',
+    'Verified simultaneous isolated routes, progress while another route stalls, provider nodes, and rejection of missing nodes against the real core.',
   )
 } finally {
   if (child && child.exitCode === null) {
@@ -175,5 +203,11 @@ try {
   }
   await close(alpha)
   await close(beta)
-  await rm(directory, { recursive: true, force: true })
+  const resolved = await realpath(directory)
+  assert.equal(
+    path.dirname(resolved).toLowerCase(),
+    (await realpath(tmpdir())).toLowerCase(),
+  )
+  assert.ok(path.basename(resolved).startsWith('cvr-speedtest-check-'))
+  await rm(resolved, { recursive: true, force: true })
 }

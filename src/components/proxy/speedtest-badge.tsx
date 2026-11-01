@@ -50,6 +50,7 @@ export function SpeedtestBadge({
           downloadUrl: getSpeedtestDownloadUrl(),
           seconds: 5,
           megabytes: 20,
+          concurrency: 1,
         },
         (next) => {
           if (

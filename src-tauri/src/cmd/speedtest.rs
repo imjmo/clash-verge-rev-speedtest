@@ -4,7 +4,16 @@ use anyhow::{Context as _, Result, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use serde_yaml_ng::{Mapping, Value};
-use std::{net::TcpListener, path::PathBuf, process::Stdio, sync::LazyLock, time::Duration};
+use std::{
+    net::TcpListener,
+    path::PathBuf,
+    process::Stdio,
+    sync::{
+        LazyLock,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
 use tauri::ipc::Channel;
 use tokio::{process::Command, time::Instant};
 use tokio_util::sync::CancellationToken;
@@ -24,6 +33,7 @@ pub struct SpeedtestOptions {
     download_url: String,
     seconds: u64,
     megabytes: u64,
+    concurrency: usize,
 }
 
 #[derive(Clone, Default, Serialize)]
@@ -77,13 +87,30 @@ fn local_port() -> Result<u16> {
     Ok(TcpListener::bind(("127.0.0.1", 0))?.local_addr()?.port())
 }
 
-fn isolated_config(runtime: &Mapping, port: u16, controller: u16, secret: &str) -> Result<Mapping> {
+fn worker_group(index: usize) -> String {
+    if index == 0 {
+        GROUP.into()
+    } else {
+        format!("{GROUP}_{index}")
+    }
+}
+
+fn isolated_config(runtime: &Mapping, ports: &[u16], controller: u16, secret: &str) -> Result<Mapping> {
+    let listeners: Vec<_> = ports
+        .iter()
+        .enumerate()
+        .map(|(index, port)| {
+            json!({
+                "name": format!("speedtest-{index}"), "type": "mixed", "listen": "127.0.0.1",
+                "port": port, "udp": false, "proxy": worker_group(index),
+                "users": [{"username": "speedtest", "password": secret}]
+            })
+        })
+        .collect();
     let mut config: Mapping = serde_yaml_ng::from_str(&serde_json::to_string(&json!({
         "mode": "rule", "log-level": "silent", "allow-lan": false,
         "external-controller": format!("127.0.0.1:{controller}"), "secret": secret,
-        "listeners": [{"name": "speedtest", "type": "mixed", "listen": "127.0.0.1",
-            "port": port, "udp": false, "proxy": GROUP,
-            "users": [{"username": "speedtest", "password": secret}]}],
+        "listeners": listeners,
         "rules": ["MATCH,REJECT"], "profile": {"store-selected": false, "store-fake-ip": false}
     }))?)?;
     for key in [
@@ -110,7 +137,8 @@ fn isolated_config(runtime: &Mapping, port: u16, controller: u16, secret: &str) 
         .or_insert_with(|| Value::Sequence(vec![]));
     let groups = groups.as_sequence_mut().context("Invalid proxy groups")?;
     for group in groups.iter_mut() {
-        if group.get("name").and_then(Value::as_str) == Some(GROUP) {
+        if (0..ports.len()).any(|index| group.get("name").and_then(Value::as_str) == Some(worker_group(index).as_str()))
+        {
             bail!("The profile uses the reserved speedtest group name");
         }
         if let Some(group) = group.as_mapping_mut() {
@@ -118,9 +146,11 @@ fn isolated_config(runtime: &Mapping, port: u16, controller: u16, secret: &str) 
             group.insert("interval".into(), 0.into());
         }
     }
-    groups.push(serde_yaml_ng::to_value(
-        json!({"name": GROUP, "type": "select", "include-all": true}),
-    )?);
+    for index in 0..ports.len() {
+        groups.push(serde_yaml_ng::to_value(
+            json!({"name": worker_group(index), "type": "select", "include-all": true}),
+        )?);
+    }
     Ok(config)
 }
 
@@ -220,11 +250,51 @@ async fn measure(
     channel: &Channel<SpeedtestResult>,
     on_progress: Option<&Channel<SpeedtestProgress>>,
     api: &reqwest::Client,
-    proxy: &reqwest::Proxy,
+    proxies: &[reqwest::Proxy],
     base: &str,
     secret: &str,
 ) -> Result<()> {
-    for node in &options.nodes {
+    let next = AtomicUsize::new(0);
+    futures::future::try_join_all(proxies.iter().enumerate().map(|(index, proxy)| {
+        let next = &next;
+        async move {
+            let worker = SpeedtestWorker {
+                api,
+                proxy,
+                base,
+                secret,
+                group: worker_group(index),
+            };
+            measure_worker(options, channel, on_progress, &worker, next).await
+        }
+    }))
+    .await?;
+    Ok(())
+}
+
+struct SpeedtestWorker<'a> {
+    api: &'a reqwest::Client,
+    proxy: &'a reqwest::Proxy,
+    base: &'a str,
+    secret: &'a str,
+    group: String,
+}
+
+async fn measure_worker(
+    options: &SpeedtestOptions,
+    channel: &Channel<SpeedtestResult>,
+    on_progress: Option<&Channel<SpeedtestProgress>>,
+    worker: &SpeedtestWorker<'_>,
+    next: &AtomicUsize,
+) -> Result<()> {
+    let SpeedtestWorker {
+        api,
+        proxy,
+        base,
+        secret,
+        group,
+    } = worker;
+    while let Some(node) = options.nodes.get(next.fetch_add(1, Ordering::Relaxed)) {
         progress(on_progress, node, "preparing")?;
         let mut rate_limited = false;
         let mut result = SpeedtestResult {
@@ -232,7 +302,7 @@ async fn measure(
             ..Default::default()
         };
         let selection = api
-            .put(format!("{base}/proxies/{GROUP}"))
+            .put(format!("{base}/proxies/{group}"))
             .bearer_auth(secret)
             .json(&json!({"name": node}))
             .send()
@@ -275,7 +345,7 @@ async fn measure(
             if options.download {
                 // A previous node's keep-alive tunnel must never carry the next test.
                 let client = reqwest::Client::builder()
-                    .proxy(proxy.clone())
+                    .proxy((*proxy).clone())
                     .no_gzip()
                     .no_brotli()
                     .no_deflate()
@@ -315,6 +385,7 @@ pub async fn run_speedtest(
         || (!options.latency && !options.download)
         || !(1..=60).contains(&options.seconds)
         || !(1..=1024).contains(&options.megabytes)
+        || !(1..=10).contains(&options.concurrency)
     {
         return Err("Invalid speedtest options".into());
     }
@@ -344,10 +415,13 @@ pub async fn run_speedtest(
             use std::os::unix::fs::PermissionsExt as _;
             std::fs::set_permissions(&guard.directory, std::fs::Permissions::from_mode(0o700))?;
         }
-        let port = local_port()?;
-        let mut controller = local_port()?;
-        while controller == port {
-            controller = local_port()?;
+        let controller = local_port()?;
+        let mut ports = Vec::new();
+        while ports.len() < options.concurrency.min(options.nodes.len()) {
+            let port = local_port()?;
+            if port != controller && !ports.contains(&port) {
+                ports.push(port);
+            }
         }
         let secret = nanoid::nanoid!(32);
         let runtime = Config::runtime()
@@ -356,7 +430,7 @@ pub async fn run_speedtest(
             .config
             .clone()
             .context("No active profile")?;
-        let mut config = isolated_config(&runtime, port, controller, &secret)?;
+        let mut config = isolated_config(&runtime, &ports, controller, &secret)?;
         prepare_assets(&mut config, &guard.directory, &dirs::app_home_dir()?)?;
         let config_path = guard.directory.join("config.yaml");
         std::fs::write(&config_path, serde_yaml_ng::to_string(&config)?)?;
@@ -413,8 +487,13 @@ pub async fn run_speedtest(
                 }
                 tokio::time::sleep(Duration::from_millis(150)).await;
             }
-            let proxy = reqwest::Proxy::all(format!("http://127.0.0.1:{port}"))?.basic_auth("speedtest", &secret);
-            measure(&options, &on_result, Some(&on_progress), &api, &proxy, &base, &secret).await
+            let proxies = ports
+                .iter()
+                .map(|port| {
+                    Ok(reqwest::Proxy::all(format!("http://127.0.0.1:{port}"))?.basic_auth("speedtest", &secret))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            measure(&options, &on_result, Some(&on_progress), &api, &proxies, &base, &secret).await
         };
         let result = tokio::select! { _ = token.cancelled() => Ok(()), result = work => result };
         let _ = child.kill().await;
@@ -465,6 +544,7 @@ mod tests {
                 download_url: format!("http://{address}/"),
                 seconds: 1,
                 megabytes: 1,
+                concurrency: 1,
             };
             let outcome = download(&reqwest::Client::builder().no_proxy().build()?, &options).await;
             server.await??;
@@ -487,12 +567,14 @@ mod tests {
         let runtime: Mapping = serde_yaml_ng::from_str(
             "mixed-port: 7890\nexternal-controller: 0.0.0.0:9090\nsecret: original\ntun: {enable: true}\ndns: {listen: '0.0.0.0:53', enhanced-mode: fake-ip}\nlisteners: [{name: original, type: mixed, port: 7891}]\n",
         )?;
-        let config = isolated_config(&runtime, 12000, 12001, "test-secret")?;
+        let config = isolated_config(&runtime, &[12000, 12002], 12001, "test-secret")?;
         assert!(!config.contains_key("mixed-port"));
         assert!(!config.contains_key("tun"));
         assert_eq!(config["external-controller"].as_str(), Some("127.0.0.1:12001"));
         assert_eq!(config["listeners"][0]["proxy"].as_str(), Some(GROUP));
         assert_eq!(config["listeners"][0]["listen"].as_str(), Some("127.0.0.1"));
+        assert_eq!(config["listeners"][1]["proxy"].as_str(), Some(worker_group(1).as_str()));
+        assert_eq!(config["listeners"][1]["port"].as_u64(), Some(12002));
         assert!(config["dns"].get("listen").is_none());
         assert_eq!(runtime["tun"]["enable"].as_bool(), Some(true));
         assert_eq!(runtime["secret"].as_str(), Some("original"));
@@ -501,11 +583,12 @@ mod tests {
 
     #[tokio::test]
     async fn each_node_uses_a_fresh_download_connection() -> Result<()> {
-        check_batch_connections(false).await?;
-        check_batch_connections(true).await
+        check_batch_connections(false, 1).await?;
+        check_batch_connections(true, 1).await?;
+        check_batch_connections(true, 2).await
     }
 
-    async fn check_batch_connections(rate_limited: bool) -> Result<()> {
+    async fn check_batch_connections(rate_limited: bool, workers: usize) -> Result<()> {
         use std::sync::{
             Arc,
             atomic::{AtomicUsize, Ordering},
@@ -552,26 +635,140 @@ mod tests {
         });
         let options = SpeedtestOptions {
             id: "connections".into(),
-            nodes: vec!["alpha".into(), "beta".into()],
+            nodes: if rate_limited {
+                vec!["alpha".into(), "beta".into(), "gamma".into(), "delta".into()]
+            } else {
+                vec!["alpha".into(), "beta".into()]
+            },
             latency: false,
             download: true,
             latency_url: String::new(),
             download_url: "http://speedtest.invalid/payload".into(),
             seconds: 2,
             megabytes: 1,
+            concurrency: workers,
         };
         let channel = Channel::new(|_| Ok(()));
         let api = reqwest::Client::builder().no_proxy().build()?;
-        let result = measure(&options, &channel, None, &api, &proxy, &base, "test").await;
+        let result = measure(&options, &channel, None, &api, &vec![proxy; workers], &base, "test").await;
         selector_task.abort();
         server.abort();
         if rate_limited {
             assert!(result.unwrap_err().to_string().contains("HTTP 429"));
-            assert_eq!(connections.load(Ordering::SeqCst), 1);
+            assert!((1..=workers).contains(&connections.load(Ordering::SeqCst)));
         } else {
             result?;
             assert_eq!(connections.load(Ordering::SeqCst), 2);
         }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn completed_worker_takes_next_node_while_another_is_still_running() -> Result<()> {
+        use std::sync::Arc;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let base = format!("http://{}", listener.local_addr()?);
+        let slow_started = Arc::new(tokio::sync::Notify::new());
+        let third_started = Arc::new(tokio::sync::Notify::new());
+        let release_slow = Arc::new(tokio::sync::Notify::new());
+        let active = Arc::new(AtomicUsize::new(0));
+        let peak = Arc::new(AtomicUsize::new(0));
+        let server = {
+            let (slow_started, third_started, release_slow, active, peak) = (
+                slow_started.clone(),
+                third_started.clone(),
+                release_slow.clone(),
+                active.clone(),
+                peak.clone(),
+            );
+            tokio::spawn(async move {
+                let mut requests = tokio::task::JoinSet::new();
+                loop {
+                    let (mut socket, _) = listener.accept().await.unwrap();
+                    let (slow_started, third_started, release_slow, active, peak) = (
+                        slow_started.clone(),
+                        third_started.clone(),
+                        release_slow.clone(),
+                        active.clone(),
+                        peak.clone(),
+                    );
+                    requests.spawn(async move {
+                        let mut request = Vec::new();
+                        while !request.ends_with(b"\r\n\r\n") {
+                            request.push(socket.read_u8().await?);
+                        }
+                        let request = String::from_utf8_lossy(&request);
+                        if request.starts_with("PUT ") {
+                            let length = request
+                                .lines()
+                                .find_map(|line| {
+                                    line.to_lowercase()
+                                        .strip_prefix("content-length: ")
+                                        .and_then(|v| v.parse::<usize>().ok())
+                                })
+                                .unwrap();
+                            socket.read_exact(&mut vec![0; length]).await?;
+                            socket
+                                .write_all(b"HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n")
+                                .await?;
+                        } else {
+                            let count = active.fetch_add(1, Ordering::SeqCst) + 1;
+                            peak.fetch_max(count, Ordering::SeqCst);
+                            if request.contains("/alpha/delay") {
+                                slow_started.notify_one();
+                                release_slow.notified().await;
+                            } else if request.contains("/beta/delay") {
+                                slow_started.notified().await;
+                            } else {
+                                third_started.notify_one();
+                            }
+                            active.fetch_sub(1, Ordering::SeqCst);
+                            socket
+                                .write_all(
+                                    b"HTTP/1.1 200 OK\r\nContent-Length: 12\r\nConnection: close\r\n\r\n{\"delay\":10}",
+                                )
+                                .await?;
+                        }
+                        Ok::<_, std::io::Error>(())
+                    });
+                }
+            })
+        };
+        let options = SpeedtestOptions {
+            id: "refill".into(),
+            nodes: vec!["alpha".into(), "beta".into(), "gamma".into()],
+            latency: true,
+            download: false,
+            latency_url: "http://latency.invalid".into(),
+            download_url: "http://download.invalid".into(),
+            seconds: 1,
+            megabytes: 1,
+            concurrency: 2,
+        };
+        let results = Arc::new(parking_lot::Mutex::new(Vec::<String>::new()));
+        let output = results.clone();
+        let channel = Channel::new(move |body| {
+            let value: serde_json::Value = body.deserialize()?;
+            output.lock().push(value["node"].as_str().unwrap().into());
+            Ok(())
+        });
+        let task = tokio::spawn(async move {
+            let api = reqwest::Client::builder().no_proxy().build()?;
+            let proxies = [
+                reqwest::Proxy::all("http://127.0.0.1:1")?,
+                reqwest::Proxy::all("http://127.0.0.1:2")?,
+            ];
+            measure(&options, &channel, None, &api, &proxies, &base, "test").await
+        });
+        let refilled = tokio::time::timeout(Duration::from_secs(3), third_started.notified()).await;
+        release_slow.notify_one();
+        let completed = tokio::time::timeout(Duration::from_secs(3), task).await;
+        server.abort();
+        refilled.context("The third node waited for the slow first node")?;
+        completed???;
+        assert_eq!(peak.load(Ordering::SeqCst), 2);
+        assert_eq!(results.lock().len(), 3);
+        assert_eq!(results.lock()[0], "beta");
         Ok(())
     }
 
@@ -599,6 +796,7 @@ mod tests {
             download_url: format!("http://{address}/"),
             seconds: 1,
             megabytes: 1,
+            concurrency: 1,
         };
         let started = Instant::now();
         let outcome = download(&reqwest::Client::builder().no_proxy().build()?, &options).await;

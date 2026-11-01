@@ -362,6 +362,8 @@ export const translationKeys = [
   'proxies.speedtest.megabytes',
   'proxies.speedtest.downloadUrl',
   'proxies.speedtest.traffic',
+  'proxies.speedtest.concurrency',
+  'proxies.speedtest.concurrencyHint',
   'proxies.speedtest.selectVisible',
   'proxies.speedtest.invert',
   'proxies.speedtest.clearSelection',

@@ -18,6 +18,7 @@ export interface SpeedtestOptions {
   downloadUrl: string
   seconds: number
   megabytes: number
+  concurrency: number
 }
 
 export const DEFAULT_SPEEDTEST_DOWNLOAD =
@@ -67,7 +68,7 @@ interface ActiveSpeedtest {
   id: string
   profile: string
   node?: string
-  current?: SpeedtestProgress
+  stages: Record<string, SpeedtestProgress['stage']>
 }
 let activeSpeedtest: ActiveSpeedtest | null = null
 const runListeners = new Set<() => void>()
@@ -85,14 +86,24 @@ export const runSpeedtest = async (
   context: { profile: string; node?: string },
 ) => {
   if (activeSpeedtest) throw new Error('Another speedtest is already running')
-  activeSpeedtest = { id: options.id, ...context }
+  activeSpeedtest = { id: options.id, ...context, stages: {} }
   runListeners.forEach((listener) => listener())
   const onResultChannel = new Channel<SpeedtestResult>()
-  onResultChannel.onmessage = onResult
+  onResultChannel.onmessage = (result) => {
+    if (activeSpeedtest?.id !== options.id) return
+    const stages = { ...activeSpeedtest.stages }
+    delete stages[result.node]
+    activeSpeedtest = { ...activeSpeedtest, stages }
+    runListeners.forEach((listener) => listener())
+    onResult(result)
+  }
   const onProgressChannel = new Channel<SpeedtestProgress>()
   onProgressChannel.onmessage = (current) => {
     if (activeSpeedtest?.id !== options.id) return
-    activeSpeedtest = { ...activeSpeedtest, current }
+    activeSpeedtest = {
+      ...activeSpeedtest,
+      stages: { ...activeSpeedtest.stages, [current.node]: current.stage },
+    }
     runListeners.forEach((listener) => listener())
   }
   try {

@@ -611,6 +611,8 @@ export interface TranslationResources {
         both: string
         clearSelection: string
         close: string
+        concurrency: string
+        concurrencyHint: string
         connectionHint: string
         currentNode: string
         delay: string
