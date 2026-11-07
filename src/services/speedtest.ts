@@ -1,4 +1,6 @@
-import { Channel, invoke } from '@tauri-apps/api/core'
+import { Channel } from '@tauri-apps/api/core'
+
+import { cancelSpeedtestCommand, invokeSpeedtest } from './cmds'
 
 export interface SpeedtestResult {
   node: string
@@ -107,7 +109,7 @@ export const runSpeedtest = async (
     runListeners.forEach((listener) => listener())
   }
   try {
-    await invoke<void>('run_speedtest', {
+    await invokeSpeedtest({
       options,
       onResult: onResultChannel,
       onProgress: onProgressChannel,
@@ -118,8 +120,7 @@ export const runSpeedtest = async (
   }
 }
 
-export const cancelSpeedtest = (id: string) =>
-  invoke<void>('cancel_speedtest', { id })
+export const cancelSpeedtest = (id: string) => cancelSpeedtestCommand(id)
 
 export type SpeedtestSort = 'node' | 'delay' | 'bytesPerSecond'
 

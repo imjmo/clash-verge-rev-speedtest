@@ -1,6 +1,6 @@
-import { invoke } from '@tauri-apps/api/core'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { invokeSpeedtest } from './cmds'
 import {
   sortSpeedtestRows,
   speedtestSelectionPath,
@@ -12,13 +12,16 @@ import {
 
 vi.mock('@tauri-apps/api/core', () => ({
   Channel: class {},
-  invoke: vi.fn(),
+}))
+vi.mock('./cmds', () => ({
+  invokeSpeedtest: vi.fn(),
+  cancelSpeedtestCommand: vi.fn(),
 }))
 
 afterEach(() => vi.unstubAllGlobals())
 
 it('keeps concurrent progress per node and removes only the completed node', async () => {
-  vi.mocked(invoke).mockImplementationOnce(async (_, args) => {
+  vi.mocked(invokeSpeedtest).mockImplementationOnce(async (args) => {
     const { onProgress, onResult } = args as {
       onProgress: {
         onmessage: (event: { node: string; stage: string }) => void

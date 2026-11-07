@@ -5,6 +5,18 @@ import { pathToFileURL } from 'node:url'
 
 // Each anchor must occur exactly once. Never replace a whole upstream file with an older copy.
 export const integrations = {
+  'eslint.config.ts': [
+    [
+      "    files: ['src/services/bindings.ts'],\n",
+      "    files: ['src/services/bindings.ts', 'src/services/speedtest-bindings.ts'],\n",
+    ],
+  ],
+  'src/services/cmds.ts': [
+    [
+      'export async function copyClashEnv() {\n',
+      "export { cancelSpeedtestCommand, invokeSpeedtest } from './speedtest-bindings'\n\nexport async function copyClashEnv() {\n",
+    ],
+  ],
   'src/components/proxy/proxy-head.tsx': [
     [
       "import type { ProxySortType } from './use-filter-sort'",

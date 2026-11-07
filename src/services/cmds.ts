@@ -30,6 +30,8 @@ export type {
   UnlockItem,
 } from './bindings'
 
+export { cancelSpeedtestCommand, invokeSpeedtest } from './speedtest-bindings'
+
 export async function copyClashEnv() {
   return commands.copyClashEnv()
 }

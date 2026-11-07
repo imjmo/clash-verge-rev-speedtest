@@ -20,7 +20,7 @@ export function useSpeedtestDelayState(
   const onDelay = useLockFn(async () => {
     await state.onDelay()
     if (member.kind !== 'node' || state.isPreset || profile === null) return
-    const result = delayManager.getDelayUpdate(member, groupName)
+    const result = delayManager.getDelayUpdate(member.ref.name, groupName)
     if (!result || result.delay === -2) return
     const measured = result.delay > 0 && result.delay < state.timeout
     const saved = saveSpeedtestResult(

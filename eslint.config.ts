@@ -265,7 +265,7 @@ export default defineConfig([
     rules: ipcBoundaryRules({ allowCommands: true }),
   },
   {
-    files: ['src/services/bindings.ts'],
+    files: ['src/services/bindings.ts', 'src/services/speedtest-bindings.ts'],
     rules: ipcBoundaryRules({ allowCommands: true, allowInvoke: true }),
   },
   {
