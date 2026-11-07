@@ -92,7 +92,10 @@ speedtest hook adds saved measurements to node cards.
 This avoids nearby import and insertion conflicts without discarding upstream
 changes. It is not a plugin API: changes to an anchor, node-card layout, or a
 dependency can still require adaptation. Other files use ordinary Git merging.
-A conflict fails with a list of conflicting files in the run summary.
+A conflict fails once with its details in the run summary. A 90-day artifact
+records the blocked pair of fork and upstream commits; scheduled runs skip that
+same pair instead of sending a failure email every day. A change to either commit
+automatically retries, and **Run workflow** always allows a manual retry.
 The candidate retains this fork's workflow files because `GITHUB_TOKEN` cannot
 push workflow changes. The summary lists upstream CI differences for separate
 review; application code and build dependencies still follow the stable release.

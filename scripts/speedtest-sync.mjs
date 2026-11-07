@@ -52,6 +52,33 @@ git(
 )
 const upstream = git('rev-parse', 'FETCH_HEAD^{commit}')
 const base = git('rev-parse', 'HEAD')
+const blockedArtifact = `speedtest-blocked-${base}-${upstream}`
+const recordBlocked = (reason) => {
+  writeFileSync(
+    'speedtest-blocked.json',
+    JSON.stringify({ tag, base, upstream, reason }, null, 2),
+  )
+  output('blocked_artifact', blockedArtifact)
+}
+if (process.env.GITHUB_EVENT_NAME === 'schedule') {
+  const attempts = await fetch(
+    `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/actions/artifacts?name=${blockedArtifact}&per_page=1`,
+    { headers: { Authorization: `Bearer ${process.env.GH_TOKEN}` } },
+  )
+  if (!attempts.ok)
+    throw new Error(`Blocked update lookup failed: ${attempts.status}`)
+  const { artifacts } = await attempts.json()
+  if (
+    artifacts.some(
+      (artifact) => artifact.name === blockedArtifact && !artifact.expired,
+    )
+  ) {
+    summary(
+      `Upgrade to ${tag} is still blocked by a previously reported integration conflict. The stable branch remains on ${metadata.tag}. Scheduled retries resume when either source revision changes; use Run workflow to retry manually.`,
+    )
+    process.exit(0)
+  }
+}
 const branch = `speedtest-update/${tag}-${base.slice(0, 8)}`
 output('base', base)
 output('branch', branch)
@@ -80,6 +107,7 @@ let overlay
 try {
   overlay = prepareOverlay(previousUpstream, base, upstream)
 } catch (error) {
+  recordBlocked(error.message)
   summary(
     `Upgrade to ${tag} needs an integration adjustment. The speedtest branch was not changed.\n\n${error.message}`,
   )
@@ -123,6 +151,7 @@ if (workflowChanges)
   )
 const conflicts = git('diff', '--name-only', '--diff-filter=U')
 if (conflicts) {
+  recordBlocked(`Conflicting files: ${conflicts}`)
   summary(
     `Upgrade to ${tag} needs attention. The speedtest branch was not changed.\n\nConflicting files:\n\n\`\`\`\n${conflicts}\n\`\`\``,
   )

@@ -161,8 +161,6 @@ mod app_init {
             cmd::patch_clash_mode,
             cmd::get_clash_mode,
             cmd::change_clash_core,
-            cmd::speedtest::run_speedtest,
-            cmd::speedtest::cancel_speedtest,
             cmd::get_runtime_config,
             cmd::get_proxy_view,
             cmd::get_runtime_yaml,
@@ -331,7 +329,18 @@ pub fn run() -> std::process::ExitCode {
 
             Ok(())
         })
-        .invoke_handler(app_init::generate_handlers());
+        .invoke_handler({
+            let upstream = app_init::generate_handlers();
+            let speedtest: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool =
+                tauri::generate_handler![cmd::speedtest::run_speedtest, cmd::speedtest::cancel_speedtest];
+            move |invoke: tauri::ipc::Invoke<tauri::Wry>| {
+                if matches!(invoke.message.command(), "run_speedtest" | "cancel_speedtest") {
+                    speedtest(invoke)
+                } else {
+                    upstream(invoke)
+                }
+            }
+        });
 
     // macOS 内存压力下 WKWebView 渲染进程可能被系统终止（表现为白屏），
     // 注册恢复钩子：清理孤儿 WebSocket 订阅防止内存泄漏；窗口可见时立即 reload

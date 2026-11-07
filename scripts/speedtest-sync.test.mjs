@@ -41,6 +41,7 @@ test('overlay rejects missing or ambiguous insertion points', () => {
 
 for (const scenario of [
   'compatible',
+  'registry-moved',
   'conflict',
   'unmanaged',
   'moved-anchor',
@@ -97,6 +98,14 @@ for (const scenario of [
     )
     put('.github/workflows/build.yml', 'upstream new\n')
     put('.github/workflows/new.yml', 'upstream new workflow\n')
+    if (scenario === 'registry-moved')
+      put(
+        'src-tauri/src/lib.rs',
+        originals['src-tauri/src/lib.rs'].replace(
+          /tauri::generate_handler!\[[\s\S]*?\n        \]/,
+          '{\n            let builder = crate::ipc::builder();\n            move |invoke| builder.invoke_handler()(invoke)\n        }',
+        ),
+      )
     put('app.txt', 'new upstream\n')
     commit('next upstream')
     git('tag', 'v9.0.1')
@@ -127,7 +136,11 @@ for (const scenario of [
     const mock = join(root, 'release.mjs')
     writeFileSync(
       mock,
-      "globalThis.fetch = async () => ({ ok: true, json: async () => ({ tag_name: 'v9.0.1' }) })",
+      `globalThis.fetch = async (url) => ({ ok: true, json: async () =>
+        url.endsWith('/releases/latest') ? { tag_name: 'v9.0.1' } : {
+          artifacts: process.env.BLOCKED_ARTIFACT ? [{ name: process.env.BLOCKED_ARTIFACT, expired: false }] : []
+        }
+      })`,
     )
     const output = join(root, 'output.txt')
     const env = {
@@ -135,6 +148,8 @@ for (const scenario of [
       HUSKY: '0',
       GITHUB_OUTPUT: output,
       GITHUB_STEP_SUMMARY: join(root, 'summary.txt'),
+      GITHUB_EVENT_NAME: 'schedule',
+      GITHUB_REPOSITORY: 'fixture/fork',
     }
     const run = (script, args = [], extra = {}) =>
       spawnSync(process.execPath, [...args, script], {
@@ -156,6 +171,44 @@ for (const scenario of [
         git('ls-remote', 'origin', 'refs/heads/speedtest-update/*'),
         '',
       )
+      const blocked = JSON.parse(
+        readFileSync(join(dir, 'speedtest-blocked.json'), 'utf8'),
+      )
+      assert.equal(blocked.base, base)
+      assert.equal(blocked.upstream, git('rev-parse', 'v9.0.1'))
+      const artifact = `speedtest-blocked-${blocked.base}-${blocked.upstream}`
+      git('switch', 'speedtest')
+      writeFileSync(output, '')
+      const repeated = run(syncScript, ['--import', pathToFileURL(mock).href], {
+        BLOCKED_ARTIFACT: artifact,
+      })
+      assert.equal(repeated.status, 0, repeated.stderr)
+      assert.equal(readFileSync(output, 'utf8').trim(), 'changed=false')
+      assert.match(
+        readFileSync(env.GITHUB_STEP_SUMMARY, 'utf8'),
+        /still blocked/,
+      )
+      git('branch', '-D', `speedtest-update/v9.0.1-${base.slice(0, 8)}`)
+      const manual = run(syncScript, ['--import', pathToFileURL(mock).href], {
+        BLOCKED_ARTIFACT: artifact,
+        GITHUB_EVENT_NAME: 'workflow_dispatch',
+      })
+      assert.notEqual(manual.status, 0)
+      assert.match(
+        manual.stderr,
+        scenario === 'conflict' ? /app.txt/ : /integration/,
+      )
+      git('switch', 'speedtest')
+      put('fix.txt', 'retry after source changes\n')
+      commit('update fork')
+      const changed = run(syncScript, ['--import', pathToFileURL(mock).href], {
+        BLOCKED_ARTIFACT: artifact,
+      })
+      assert.notEqual(changed.status, 0)
+      assert.match(
+        changed.stderr,
+        scenario === 'conflict' ? /app.txt/ : /integration/,
+      )
       return
     }
     assert.equal(result.status, 0, result.stderr)
@@ -171,12 +224,18 @@ for (const scenario of [
     assert.equal(git('diff', base, 'HEAD', '--', '.github/workflows'), '')
     assert.match(git('show', `HEAD:${headFile}`), /NewUpstreamControl/)
     assert.match(git('show', `HEAD:${headFile}`), /<SpeedTestButton/)
+    if (scenario === 'registry-moved') {
+      const lib = git('show', 'HEAD:src-tauri/src/lib.rs')
+      assert.match(lib, /crate::ipc::builder/)
+      assert.match(lib, /cmd::speedtest::run_speedtest/)
+      assert.doesNotMatch(lib, /cmd::change_clash_core/)
+    }
     git('switch', 'speedtest')
     writeFileSync(output, '')
     const retry = run(syncScript, ['--import', pathToFileURL(mock).href])
     assert.equal(retry.status, 0, retry.stderr)
     assert.deepEqual(outputs(), candidate)
-    if (scenario !== 'compatible') {
+    if (['stable-moved', 'candidate-moved'].includes(scenario)) {
       if (scenario === 'candidate-moved') git('switch', candidate.branch)
       put('unrelated.txt', 'concurrent edit\n')
       commit('concurrent edit')
@@ -192,7 +251,7 @@ for (const scenario of [
       SPEEDTEST_REF: candidate.ref,
       SPEEDTEST_BRANCH: candidate.branch,
     })
-    if (scenario === 'compatible') {
+    if (['compatible', 'registry-moved'].includes(scenario)) {
       assert.equal(promoted.status, 0, promoted.stderr)
       assert.equal(stable(), candidate.ref)
     } else {

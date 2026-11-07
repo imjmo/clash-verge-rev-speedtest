@@ -16,6 +16,9 @@ jobs:
   sync:
     if: github.repository == 'imjmo/clash-verge-rev-speedtest'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
     outputs:
       changed: ${{ steps.sync.outputs.changed }}
       ref: ${{ steps.sync.outputs.ref }}
@@ -34,6 +37,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/speedtest-sync.mjs
+      - name: Remember an integration conflict until the source changes
+        if: failure() && steps.sync.outputs.blocked_artifact != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.sync.outputs.blocked_artifact }}
+          path: speedtest-blocked.json
+          retention-days: 90
+          if-no-files-found: error
   build:
     needs: sync
     if: needs.sync.outputs.changed == 'true'

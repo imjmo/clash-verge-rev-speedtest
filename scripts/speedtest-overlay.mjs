@@ -60,8 +60,20 @@ export const integrations = {
   ],
   'src-tauri/src/lib.rs': [
     [
-      '            cmd::change_clash_core,\n',
-      '            cmd::change_clash_core,\n            cmd::speedtest::run_speedtest,\n            cmd::speedtest::cancel_speedtest,\n',
+      '        .invoke_handler(app_init::generate_handlers());\n',
+      `        .invoke_handler({
+            let upstream = app_init::generate_handlers();
+            let speedtest: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool =
+                tauri::generate_handler![cmd::speedtest::run_speedtest, cmd::speedtest::cancel_speedtest];
+            move |invoke: tauri::ipc::Invoke<tauri::Wry>| {
+                if matches!(invoke.message.command(), "run_speedtest" | "cancel_speedtest") {
+                    speedtest(invoke)
+                } else {
+                    upstream(invoke)
+                }
+            }
+        });
+`,
     ],
   ],
 }
